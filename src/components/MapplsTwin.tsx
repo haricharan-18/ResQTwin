@@ -4,16 +4,13 @@ import { mappls } from "mappls-web-maps";
 import {
   buildings,
   exits,
-  roads,
   assemblyPoints,
 } from "../data/campusData";
 
 import {
   SNIST_MAP_CENTER,
-  campusXYToMappls,
   buildingsToMappls,
   exitsToMappls,
-  roadsToMappls,
   assemblyPointsToMappls,
 } from "../lib/mapplsCampus";
 
@@ -35,25 +32,28 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
   const [error, setError] = useState("");
 
   /*
-   * Remove all ResQTwin layers from the Mappls map.
+   * Remove every ResQTwin overlay from Mappls.
    */
-  const clearCampusLayers = () => {
+  const clearOverlays = () => {
     const map = mapInstanceRef.current;
     const mapplsObject = mapplsRef.current;
 
-    if (!map || !mapplsObject) return;
+    if (!map || !mapplsObject) {
+      overlaysRef.current = [];
+      return;
+    }
 
-    overlaysRef.current.forEach((layer) => {
+    overlaysRef.current.forEach((overlay) => {
       try {
         mapplsObject.removeLayer?.({
           map,
-          layer,
+          layer: overlay,
         });
       } catch {
         try {
-          layer?.remove?.();
+          overlay?.remove?.();
         } catch {
-          // Ignore cleanup failures.
+          // Ignore cleanup errors.
         }
       }
     });
@@ -62,14 +62,17 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
   };
 
   /*
-   * Draw ResQTwin's digital-twin infrastructure
-   * over the real SNIST Mappls map.
+   * Draw semantic ResQTwin intelligence on top of the
+   * REAL SNIST Mappls map.
+   *
+   * IMPORTANT:
+   * We do NOT recreate the old 2D campus geometry here.
    */
-  const drawCampusLayers = (
+  const drawResQTwinLayers = (
     map: any,
     mapplsObject: any
   ) => {
-    clearCampusLayers();
+    clearOverlays();
 
     const mapBuildings =
       buildingsToMappls(buildings);
@@ -77,102 +80,105 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
     const mapExits =
       exitsToMappls(exits);
 
-    const mapRoads =
-      roadsToMappls(roads);
-
     const mapAssemblyPoints =
       assemblyPointsToMappls(
         assemblyPoints
       );
 
-    const affectedBuildings = new Set(
-      scenario?.affectedBuildings ?? []
-    );
+    const affectedBuildings =
+      new Set(
+        scenario?.affectedBuildings ?? []
+      );
 
-    const blockedRoads = new Set(
-      scenario?.blockedRoads ?? []
-    );
-
-    const blockedExits = new Set(
-      scenario?.blockedExits ?? []
-    );
+    const blockedExits =
+      new Set(
+        scenario?.blockedExits ?? []
+      );
 
     /*
      * =====================================================
-     * BUILDING FOOTPRINTS
+     * BUILDINGS
      * =====================================================
+     *
+     * We place a compact semantic marker at the
+     * building's real-campus anchor.
+     *
+     * The actual Mappls map remains visible underneath,
+     * including the real building footprint.
      */
     mapBuildings.forEach((building) => {
       try {
-        if (!mapplsObject.Polygon) return;
-
-        const topLeft =
-          campusXYToMappls(
-            building.x,
-            building.y
-          );
-
-        const topRight =
-          campusXYToMappls(
-            building.x + building.width,
-            building.y
-          );
-
-        const bottomRight =
-          campusXYToMappls(
-            building.x + building.width,
-            building.y + building.height
-          );
-
-        const bottomLeft =
-          campusXYToMappls(
-            building.x,
-            building.y + building.height
-          );
+        if (!mapplsObject.Marker) return;
 
         const affected =
           affectedBuildings.has(building.id);
 
-        const polygon =
-          mapplsObject.Polygon({
+        const marker =
+          mapplsObject.Marker({
             map,
 
-            paths: [
-              {
-                lat: topLeft.lat,
-                lng: topLeft.lng,
-              },
-              {
-                lat: topRight.lat,
-                lng: topRight.lng,
-              },
-              {
-                lat: bottomRight.lat,
-                lng: bottomRight.lng,
-              },
-              {
-                lat: bottomLeft.lat,
-                lng: bottomLeft.lng,
-              },
-            ],
+            position: {
+              lat: building.mappls.lat,
+              lng: building.mappls.lng,
+            },
 
-            strokeColor: affected
-              ? "#ef4444"
-              : "#06b6d4",
+            html: `
+              <div
+                style="
+                  transform:translate(-50%,-100%);
+                  display:flex;
+                  flex-direction:column;
+                  align-items:center;
+                  font-family:Arial,sans-serif;
+                  pointer-events:auto;
+                "
+              >
+                <div
+                  style="
+                    padding:6px 9px;
+                    border-radius:9px;
+                    background:${
+                      affected
+                        ? "rgba(127,29,29,0.97)"
+                        : "rgba(15,23,42,0.96)"
+                    };
+                    border:2px solid ${
+                      affected
+                        ? "#ef4444"
+                        : "#22d3ee"
+                    };
+                    color:#fff;
+                    font-size:11px;
+                    font-weight:800;
+                    white-space:nowrap;
+                    box-shadow:0 4px 14px rgba(0,0,0,.45);
+                  "
+                >
+                  ${
+                    affected
+                      ? "🚨 AFFECTED"
+                      : "🏢"
+                  }
+                  ${building.name}
+                </div>
 
-            strokeOpacity: 1,
-
-            strokeWeight: affected
-              ? 5
-              : 3,
-
-            fillColor: affected
-              ? "#ef4444"
-              : "#0891b2",
-
-            fillOpacity: affected
-              ? 0.45
-              : 0.22,
+                <div
+                  style="
+                    width:11px;
+                    height:11px;
+                    margin-top:-1px;
+                    border-radius:50%;
+                    background:${
+                      affected
+                        ? "#ef4444"
+                        : "#22d3ee"
+                    };
+                    border:2px solid #fff;
+                    box-shadow:0 2px 8px rgba(0,0,0,.45);
+                  "
+                ></div>
+              </div>
+            `,
 
             popupHtml: `
               <div
@@ -189,25 +195,32 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
                     margin-bottom:8px;
                   "
                 >
-                  ${affected ? "🚨" : "🏢"}
+                  ${
+                    affected
+                      ? "🚨 "
+                      : "🏢 "
+                  }
                   ${building.name}
                 </div>
 
-                <div style="font-size:12px;line-height:1.8">
+                <div
+                  style="
+                    font-size:12px;
+                    line-height:1.8;
+                  "
+                >
                   👥 Occupants:
                   <b>${building.occupants}</b>
+
                   <br/>
 
                   🏢 Capacity:
                   <b>${building.capacity}</b>
+
                   <br/>
 
                   ⚠️ Base Risk:
                   <b>${building.risk}/100</b>
-                  <br/>
-
-                  📍 Digital Twin ID:
-                  <b>${building.id}</b>
                 </div>
 
                 <div
@@ -223,167 +236,27 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
                 >
                   ${
                     affected
-                      ? "🚨 AFFECTED BUILDING"
-                      : "✓ BUILDING SAFE"
+                      ? "🚨 AFFECTED BY ACTIVE DISASTER"
+                      : "✓ CURRENTLY SAFE"
                   }
                 </div>
               </div>
             `,
+
+            popupOptions: {
+              maxWidth: 320,
+            },
+
+            width: 30,
+            height: 30,
           });
 
         overlaysRef.current.push(
-          polygon
-        );
-
-        /*
-         * Building center marker.
-         */
-        if (mapplsObject.Marker) {
-          const marker =
-            mapplsObject.Marker({
-              map,
-
-              position: {
-                lat: building.mappls.lat,
-                lng: building.mappls.lng,
-              },
-
-              popupHtml: `
-                <div
-                  style="
-                    padding:10px;
-                    font-family:Arial,sans-serif;
-                  "
-                >
-                  <b>
-                    ${affected ? "🚨 " : "🏢 "}
-                    ${building.name}
-                  </b>
-
-                  <br/><br/>
-
-                  Occupants:
-                  <b>${building.occupants}</b>
-
-                  <br/>
-
-                  Risk:
-                  <b>${building.risk}/100</b>
-                </div>
-              `,
-            });
-
-          overlaysRef.current.push(
-            marker
-          );
-        }
-      } catch (e) {
-        console.warn(
-          `Building layer failed for ${building.name}:`,
-          e
-        );
-      }
-    });
-
-    /*
-     * =====================================================
-     * ROADS
-     * =====================================================
-     */
-    mapRoads.forEach((roadData) => {
-      try {
-        if (!mapplsObject.Polyline) return;
-
-        const road = roadData.road;
-
-        const blocked =
-          blockedRoads.has(road.id) ||
-          road.blocked;
-
-        const line =
-          mapplsObject.Polyline({
-            map,
-
-            path: [
-              {
-                lat: roadData.from.lat,
-                lng: roadData.from.lng,
-              },
-              {
-                lat: roadData.to.lat,
-                lng: roadData.to.lng,
-              },
-            ],
-
-            strokeColor: blocked
-              ? "#ef4444"
-              : "#06b6d4",
-
-            strokeOpacity: 0.95,
-
-            strokeWeight: blocked
-              ? 9
-              : 6,
-
-            zIndex: blocked
-              ? 20
-              : 10,
-
-            popupHtml: `
-              <div
-                style="
-                  padding:12px;
-                  min-width:200px;
-                  font-family:Arial,sans-serif;
-                "
-              >
-                <div
-                  style="
-                    font-size:15px;
-                    font-weight:700;
-                  "
-                >
-                  ${blocked ? "🚧" : "🛣️"}
-                  ${road.name}
-                </div>
-
-                <br/>
-
-                Distance:
-                <b>${road.distance}m</b>
-
-                <br/>
-
-                Capacity:
-                <b>${road.capacity}</b>
-
-                <br/><br/>
-
-                <b
-                  style="
-                    color:${
-                      blocked
-                        ? "#dc2626"
-                        : "#059669"
-                    };
-                  "
-                >
-                  ${
-                    blocked
-                      ? "🚨 ROAD BLOCKED"
-                      : "✓ ROAD OPEN"
-                  }
-                </b>
-              </div>
-            `,
-          });
-
-        overlaysRef.current.push(
-          line
+          marker
         );
       } catch (e) {
         console.warn(
-          `Road layer failed for ${roadData.road.name}:`,
+          `Building marker failed: ${building.name}`,
           e
         );
       }
@@ -399,8 +272,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
         if (!mapplsObject.Marker) return;
 
         const blocked =
-          blockedExits.has(exit.id) ||
-          exit.blocked;
+          blockedExits.has(exit.id);
 
         const marker =
           mapplsObject.Marker({
@@ -411,11 +283,67 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
               lng: exit.mappls.lng,
             },
 
+            html: `
+              <div
+                style="
+                  transform:translate(-50%,-100%);
+                  display:flex;
+                  flex-direction:column;
+                  align-items:center;
+                  font-family:Arial,sans-serif;
+                  pointer-events:auto;
+                "
+              >
+                <div
+                  style="
+                    padding:5px 8px;
+                    border-radius:8px;
+                    background:${
+                      blocked
+                        ? "rgba(127,29,29,0.97)"
+                        : "rgba(6,78,59,0.97)"
+                    };
+                    border:2px solid ${
+                      blocked
+                        ? "#ef4444"
+                        : "#34d399"
+                    };
+                    color:#fff;
+                    font-size:10px;
+                    font-weight:800;
+                    white-space:nowrap;
+                    box-shadow:0 4px 12px rgba(0,0,0,.4);
+                  "
+                >
+                  ${
+                    blocked
+                      ? "🚫"
+                      : "🚪"
+                  }
+                  ${exit.name}
+                </div>
+
+                <div
+                  style="
+                    width:9px;
+                    height:9px;
+                    margin-top:-1px;
+                    border-radius:50%;
+                    background:${
+                      blocked
+                        ? "#ef4444"
+                        : "#34d399"
+                    };
+                    border:2px solid #fff;
+                  "
+                ></div>
+              </div>
+            `,
+
             popupHtml: `
               <div
                 style="
                   padding:12px;
-                  min-width:190px;
                   font-family:Arial,sans-serif;
                 "
               >
@@ -425,7 +353,11 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
                     font-weight:700;
                   "
                 >
-                  ${blocked ? "🚫" : "🚪"}
+                  ${
+                    blocked
+                      ? "🚫 "
+                      : "🚪 "
+                  }
                   ${exit.name}
                 </div>
 
@@ -460,7 +392,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
         );
       } catch (e) {
         console.warn(
-          `Exit layer failed for ${exit.name}:`,
+          `Exit marker failed: ${exit.name}`,
           e
         );
       }
@@ -468,30 +400,61 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
 
     /*
      * =====================================================
-     * ASSEMBLY POINTS
+     * ASSEMBLY AREAS
      * =====================================================
      */
     mapAssemblyPoints.forEach((point) => {
       try {
-        if (!mapplsObject.Circle) return;
+        if (!mapplsObject.Marker) return;
 
-        const circle =
-          mapplsObject.Circle({
+        const marker =
+          mapplsObject.Marker({
             map,
 
-            center: {
+            position: {
               lat: point.mappls.lat,
               lng: point.mappls.lng,
             },
 
-            radius: 35,
+            html: `
+              <div
+                style="
+                  transform:translate(-50%,-100%);
+                  display:flex;
+                  flex-direction:column;
+                  align-items:center;
+                  font-family:Arial,sans-serif;
+                  pointer-events:auto;
+                "
+              >
+                <div
+                  style="
+                    padding:5px 8px;
+                    border-radius:8px;
+                    background:rgba(6,78,59,0.97);
+                    border:2px solid #34d399;
+                    color:#fff;
+                    font-size:10px;
+                    font-weight:800;
+                    white-space:nowrap;
+                    box-shadow:0 4px 12px rgba(0,0,0,.4);
+                  "
+                >
+                  🟢 ${point.name}
+                </div>
 
-            strokeColor: "#10b981",
-            strokeOpacity: 1,
-            strokeWeight: 3,
-
-            fillColor: "#10b981",
-            fillOpacity: 0.28,
+                <div
+                  style="
+                    width:10px;
+                    height:10px;
+                    margin-top:-1px;
+                    border-radius:50%;
+                    background:#34d399;
+                    border:2px solid #fff;
+                  "
+                ></div>
+              </div>
+            `,
 
             popupHtml: `
               <div
@@ -512,7 +475,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
 
                 <br/>
 
-                Assembly Capacity:
+                Capacity:
                 <b>${point.capacity}</b>
 
                 <br/><br/>
@@ -525,11 +488,11 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
           });
 
         overlaysRef.current.push(
-          circle
+          marker
         );
       } catch (e) {
         console.warn(
-          `Assembly layer failed for ${point.name}:`,
+          `Assembly marker failed: ${point.name}`,
           e
         );
       }
@@ -538,7 +501,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
 
   /*
    * =====================================================
-   * INITIALIZE MAP
+   * MAP INITIALIZATION
    * =====================================================
    */
   useEffect(() => {
@@ -581,10 +544,10 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
                 id: "resqtwin-map",
 
                 properties: {
-                  center: [
-                    SNIST_MAP_CENTER.lat,
-                    SNIST_MAP_CENTER.lng,
-                  ],
+                  center: {
+                    lat: SNIST_MAP_CENTER.lat,
+                    lng: SNIST_MAP_CENTER.lng,
+                  },
 
                   zoom: 17,
 
@@ -599,20 +562,19 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
               map;
 
             /*
-             * Draw after the map is loaded.
+             * Give Mappls time to create the
+             * vector map before adding overlays.
              */
-            map.on?.("load", () => {
+            setTimeout(() => {
               if (cancelled) return;
 
               try {
                 if (
                   mapplsClassObject.add3DModel
                 ) {
-                  mapplsClassObject.add3DModel(
-                    {
-                      map,
-                    }
-                  );
+                  mapplsClassObject.add3DModel({
+                    map,
+                  });
                 }
               } catch (e) {
                 console.warn(
@@ -621,39 +583,16 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
                 );
               }
 
-              setMapReady(true);
-            });
-
-            /*
-             * Fallback for SDK versions
-             * where the load event is delayed.
-             */
-            setTimeout(() => {
-              if (
-                cancelled ||
-                mapReady
-              ) {
-                return;
-              }
-
-              try {
-                if (
-                  mapplsClassObject.add3DModel
-                ) {
-                  mapplsClassObject.add3DModel(
-                    {
-                      map,
-                    }
-                  );
-                }
-              } catch {
-                // Ignore 3D landmark errors.
-              }
+              drawResQTwinLayers(
+                map,
+                mapplsClassObject
+              );
 
               setMapReady(true);
             }, 1500);
           } catch (e) {
             console.error(e);
+
             setError(
               "Unable to create Mappls map."
             );
@@ -662,6 +601,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
       );
     } catch (e) {
       console.error(e);
+
       setError(
         "Unable to initialize Mappls."
       );
@@ -670,7 +610,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
     return () => {
       cancelled = true;
 
-      clearCampusLayers();
+      clearOverlays();
 
       try {
         mapInstanceRef.current?.remove?.();
@@ -682,14 +622,17 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
       mapplsRef.current = null;
     };
 
-    // Map initialization should only happen once.
+    // Initialize Mappls only once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /*
    * =====================================================
-   * REDRAW WHEN DISASTER STATE CHANGES
+   * LIVE DISASTER UPDATE
    * =====================================================
+   *
+   * When fire/flood/etc. changes, redraw only the
+   * semantic ResQTwin markers.
    */
   useEffect(() => {
     if (
@@ -700,7 +643,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
       return;
     }
 
-    drawCampusLayers(
+    drawResQTwinLayers(
       mapInstanceRef.current,
       mapplsRef.current
     );
@@ -714,9 +657,6 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
       scenario?.affectedBuildings ?? []
     ),
     JSON.stringify(
-      scenario?.blockedRoads ?? []
-    ),
-    JSON.stringify(
       scenario?.blockedExits ?? []
     ),
   ]);
@@ -724,14 +664,13 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
   const affectedCount =
     scenario?.affectedBuildings?.length ?? 0;
 
-  const blockedRoadCount =
-    scenario?.blockedRoads?.length ?? 0;
-
   const blockedExitCount =
     scenario?.blockedExits?.length ?? 0;
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-xl">
+
+      {/* REAL MAPPLS CAMPUS */}
       <div
         ref={mapRef}
         id="resqtwin-map"
@@ -741,10 +680,14 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
         }}
       />
 
-      {/* Header */}
+      {/* =================================================
+          RESQTWIN HEADER
+          ================================================= */}
       <div className="pointer-events-none absolute left-4 top-4 z-10">
         <div className="rounded-xl border border-cyan-400/20 bg-slate-950/95 px-4 py-3 shadow-2xl backdrop-blur">
+
           <div className="flex items-center gap-2">
+
             <span
               className={`h-2.5 w-2.5 rounded-full ${
                 mapReady
@@ -756,25 +699,32 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
             <span className="text-sm font-bold text-white">
               ResQTwin • Mappls Digital Twin
             </span>
+
           </div>
 
           <div className="mt-1 text-xs text-slate-400">
             {mapReady
-              ? "LIVE • SNIST CAMPUS"
+              ? "LIVE • REAL SNIST CAMPUS"
               : "CONNECTING TO MAPPLS..."}
           </div>
+
         </div>
       </div>
 
-      {/* Campus intelligence */}
+      {/* =================================================
+          CAMPUS INTELLIGENCE
+          ================================================= */}
       {mapReady && (
         <div className="pointer-events-none absolute left-4 top-24 z-10">
+
           <div className="rounded-xl border border-white/10 bg-slate-950/95 px-4 py-3 shadow-xl backdrop-blur">
+
             <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-cyan-300">
-              Campus Digital Twin
+              Live Campus Intelligence
             </div>
 
             <div className="grid grid-cols-2 gap-x-5 gap-y-2 text-xs">
+
               <div className="text-slate-400">
                 Buildings
                 <span className="ml-2 font-bold text-cyan-300">
@@ -785,12 +735,12 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
               <div className="text-slate-400">
                 Roads
                 <span className="ml-2 font-bold text-cyan-300">
-                  7
+                  REAL
                 </span>
               </div>
 
               <div className="text-slate-400">
-                Exits
+                Emergency Exits
                 <span className="ml-2 font-bold text-emerald-300">
                   4
                 </span>
@@ -811,30 +761,27 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
               </div>
 
               <div className="text-slate-400">
-                Blocked
+                Exit Alerts
                 <span className="ml-2 font-bold text-red-400">
-                  {blockedRoadCount}
+                  {blockedExitCount}
                 </span>
               </div>
+
             </div>
 
-            {blockedExitCount > 0 && (
-              <div className="mt-2 text-xs font-bold text-red-400">
-                🚫 {blockedExitCount} exit
-                {blockedExitCount > 1
-                  ? "s"
-                  : ""}{" "}
-                blocked
-              </div>
-            )}
           </div>
+
         </div>
       )}
 
-      {/* Disaster */}
+      {/* =================================================
+          ACTIVE DISASTER
+          ================================================= */}
       {scenario && (
         <div className="pointer-events-none absolute right-4 top-4 z-10">
+
           <div className="rounded-xl border border-red-500/30 bg-slate-950/95 px-4 py-3 shadow-2xl backdrop-blur">
+
             <div className="text-[10px] font-semibold uppercase tracking-widest text-slate-500">
               Active Disaster
             </div>
@@ -847,14 +794,20 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
               Severity{" "}
               {scenario.severity ?? 0}/5
             </div>
+
           </div>
+
         </div>
       )}
 
-      {/* Crowd */}
+      {/* =================================================
+          LIVE CROWD
+          ================================================= */}
       {crowdSimulation && (
         <div className="pointer-events-none absolute bottom-4 left-4 z-10">
+
           <div className="rounded-xl border border-white/10 bg-slate-950/95 px-4 py-3 shadow-xl backdrop-blur">
+
             <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
               Live Crowd
             </div>
@@ -869,6 +822,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
             </div>
 
             <div className="mt-1 text-xs text-slate-400">
+
               Evacuating:
               <span className="ml-1 text-cyan-300">
                 {crowdSimulation.evacuating ??
@@ -887,45 +841,61 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
 
               Safe:
               <span className="ml-1 text-emerald-400">
-                {crowdSimulation.safe ?? 0}
+                {crowdSimulation.safe ??
+                  0}
               </span>
+
             </div>
+
           </div>
+
         </div>
       )}
 
-      {/* Legend */}
+      {/* =================================================
+          LEGEND
+          ================================================= */}
       {mapReady && (
         <div className="pointer-events-none absolute bottom-4 right-4 z-10">
+
           <div className="rounded-xl border border-white/10 bg-slate-950/95 px-4 py-3 shadow-xl backdrop-blur">
+
             <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-              Twin Legend
+              ResQTwin Layer
             </div>
 
             <div className="space-y-1.5 text-xs">
+
               <div className="flex items-center gap-2 text-slate-300">
                 <span className="h-2.5 w-2.5 rounded-full bg-cyan-400" />
-                Buildings / open roads
+                Campus building
               </div>
 
               <div className="flex items-center gap-2 text-slate-300">
                 <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-                Affected / blocked
+                Disaster affected
               </div>
 
               <div className="flex items-center gap-2 text-slate-300">
                 <span className="h-2.5 w-2.5 rounded-full bg-emerald-400" />
-                Exits / assembly
+                Exit / assembly
               </div>
+
             </div>
+
           </div>
+
         </div>
       )}
 
-      {/* Error */}
+      {/* =================================================
+          ERROR
+          ================================================= */}
       {error && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/90">
+
           <div className="max-w-md rounded-xl border border-red-500/30 bg-slate-900 p-6 text-center">
+
             <div className="text-lg font-bold text-red-400">
               Mappls Connection Error
             </div>
@@ -933,9 +903,12 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
             <div className="mt-2 text-sm text-slate-400">
               {error}
             </div>
+
           </div>
+
         </div>
       )}
+
     </div>
   );
 };

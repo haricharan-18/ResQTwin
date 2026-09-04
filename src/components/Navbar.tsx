@@ -162,7 +162,7 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <Activity className="w-8 h-8 text-blue-400" />
-            <span className="ml-2 text-xl font-bold text-white">DisasterHub</span>
+            <span className="ml-2 text-xl font-bold text-white">ResQTwin</span>
           </div>
           
           <div className="flex items-center space-x-4">

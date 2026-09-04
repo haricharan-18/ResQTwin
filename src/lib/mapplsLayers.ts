@@ -32,31 +32,37 @@ const ROAD_PATHS: Record<string, LatLng[]> = {
     { lat: 17.45475, lng: 78.66670 },
     { lat: 17.45510, lng: 78.66705 },
   ],
+
   r2: [
     { lat: 17.45510, lng: 78.66705 },
     { lat: 17.45555, lng: 78.66720 },
     { lat: 17.45645, lng: 78.66720 },
   ],
+
   r3: [
     { lat: 17.45510, lng: 78.66705 },
     { lat: 17.45515, lng: 78.66800 },
     { lat: 17.45515, lng: 78.66915 },
   ],
+
   r4: [
     { lat: 17.45445, lng: 78.66635 },
     { lat: 17.45405, lng: 78.66655 },
     { lat: 17.45355, lng: 78.66695 },
   ],
+
   r5: [
     { lat: 17.45385, lng: 78.66680 },
     { lat: 17.45415, lng: 78.66800 },
     { lat: 17.45515, lng: 78.66915 },
   ],
+
   r6: [
     { lat: 17.45645, lng: 78.66720 },
     { lat: 17.45595, lng: 78.66820 },
     { lat: 17.45515, lng: 78.66915 },
   ],
+
   r7: [
     { lat: 17.45385, lng: 78.66680 },
     { lat: 17.45390, lng: 78.66800 },
@@ -71,14 +77,20 @@ function addMarker(
   html: string,
   popupHtml: string
 ) {
-  if (!mapplsObject?.Marker) return null;
+  if (!mapplsObject?.Marker) {
+    return null;
+  }
 
   try {
     return mapplsObject.Marker({
       map,
       position,
-      popupHtml,
       html,
+      popupHtml,
+      popupOptions: {
+        autoClose: true,
+        maxWidth: 320,
+      },
     });
   } catch (error) {
     console.warn("Mappls marker failed:", error);
@@ -93,17 +105,24 @@ function addPolyline(
   blocked: boolean,
   popupHtml: string
 ) {
-  if (!mapplsObject?.Polyline) return null;
+  if (!mapplsObject?.Polyline) {
+    return null;
+  }
 
   try {
     return mapplsObject.Polyline({
       map,
       path,
       strokeColor: blocked ? "#ef4444" : "#06b6d4",
-      strokeOpacity: blocked ? 0.95 : 0.75,
+      strokeOpacity: blocked ? 0.95 : 0.8,
       strokeWeight: blocked ? 8 : 5,
       zIndex: blocked ? 30 : 10,
       popupHtml,
+      popupOptions: {
+        offset: {
+          bottom: [0, -20],
+        },
+      },
     });
   } catch (error) {
     console.warn("Mappls polyline failed:", error);
@@ -152,23 +171,29 @@ export function addAllMapplsLayers({
       `
         <div style="
           transform:translate(-50%,-100%);
-          padding:6px 9px;
+          padding:6px 10px;
           border-radius:9px;
           background:${affected
             ? "rgba(127,29,29,.97)"
             : "rgba(15,23,42,.97)"};
-          border:2px solid ${affected ? "#ef4444" : "#22d3ee"};
+          border:2px solid ${
+            affected ? "#ef4444" : "#22d3ee"
+          };
           color:white;
           font:800 11px Arial,sans-serif;
           white-space:nowrap;
           box-shadow:0 4px 14px rgba(0,0,0,.45);
         ">
-          ${affected ? "🚨" : "🏢"} ${building.name}
+          ${affected ? "AFFECTED" : "BUILDING"} ${building.name}
         </div>
       `,
       `
-        <div style="padding:12px;min-width:210px;font-family:Arial,sans-serif">
-          <strong>${affected ? "🚨" : "🏢"} ${building.name}</strong>
+        <div style="
+          padding:12px;
+          min-width:220px;
+          font-family:Arial,sans-serif;
+        ">
+          <strong>${building.name}</strong>
           <br/><br/>
           Occupants: <b>${building.occupants}</b>
           <br/>
@@ -176,8 +201,14 @@ export function addAllMapplsLayers({
           <br/>
           Base Risk: <b>${building.risk}/100</b>
           <br/><br/>
-          <b style="color:${affected ? "#dc2626" : "#059669"}">
-            ${affected ? "AFFECTED BUILDING" : "BUILDING SAFE"}
+          <b style="color:${
+            affected ? "#dc2626" : "#059669"
+          }">
+            ${
+              affected
+                ? "AFFECTED BUILDING"
+                : "BUILDING SAFE"
+            }
           </b>
         </div>
       `
@@ -194,11 +225,13 @@ export function addAllMapplsLayers({
   roads.forEach((road) => {
     const path = ROAD_PATHS[road.id];
 
-    if (!path) return;
+    if (!path) {
+      return;
+    }
 
     const blocked =
       blockedRoads.has(road.id) ||
-      road.blocked;
+      Boolean(road.blocked);
 
     const line = addPolyline(
       mapplsObject,
@@ -206,18 +239,24 @@ export function addAllMapplsLayers({
       path,
       blocked,
       `
-        <div style="padding:12px;min-width:200px;font-family:Arial,sans-serif">
-          <strong>${blocked ? "🚧" : "🛣️"} ${road.name}</strong>
+        <div style="
+          padding:12px;
+          min-width:220px;
+          font-family:Arial,sans-serif;
+        ">
+          <strong>${road.name}</strong>
           <br/><br/>
           Distance: <b>${road.distance}m</b>
           <br/>
           Capacity: <b>${road.capacity}</b>
           <br/><br/>
-          <b style="color:${blocked ? "#dc2626" : "#059669"}">
+          <b style="color:${
+            blocked ? "#dc2626" : "#059669"
+          }">
             ${
               blocked
-                ? "🚨 ROAD BLOCKED"
-                : "✓ EVACUATION ROUTE OPEN"
+                ? "ROAD BLOCKED"
+                : "EVACUATION ROUTE OPEN"
             }
           </b>
         </div>
@@ -237,7 +276,7 @@ export function addAllMapplsLayers({
 
     const blocked =
       blockedExits.has(exit.id) ||
-      exit.blocked;
+      Boolean(exit.blocked);
 
     const marker = addMarker(
       mapplsObject,
@@ -249,27 +288,37 @@ export function addAllMapplsLayers({
       `
         <div style="
           transform:translate(-50%,-100%);
-          padding:5px 8px;
+          padding:5px 9px;
           border-radius:8px;
-          background:${blocked
-            ? "rgba(127,29,29,.98)"
-            : "rgba(6,78,59,.98)"};
-          border:2px solid ${blocked ? "#ef4444" : "#34d399"};
+          background:${
+            blocked
+              ? "rgba(127,29,29,.98)"
+              : "rgba(6,78,59,.98)"
+          };
+          border:2px solid ${
+            blocked ? "#ef4444" : "#34d399"
+          };
           color:white;
           font:800 10px Arial,sans-serif;
           white-space:nowrap;
           box-shadow:0 4px 12px rgba(0,0,0,.4);
         ">
-          ${blocked ? "🚫" : "🚪"} ${exit.name}
+          ${blocked ? "BLOCKED" : "EXIT"} ${exit.name}
         </div>
       `,
       `
-        <div style="padding:12px;font-family:Arial,sans-serif">
-          <strong>${blocked ? "🚫" : "🚪"} ${exit.name}</strong>
+        <div style="
+          padding:12px;
+          min-width:200px;
+          font-family:Arial,sans-serif;
+        ">
+          <strong>${exit.name}</strong>
           <br/><br/>
           Capacity: <b>${exit.capacity}</b>
           <br/><br/>
-          <b style="color:${blocked ? "#dc2626" : "#059669"}">
+          <b style="color:${
+            blocked ? "#dc2626" : "#059669"
+          }">
             ${
               blocked
                 ? "EXIT BLOCKED"
@@ -302,7 +351,7 @@ export function addAllMapplsLayers({
       `
         <div style="
           transform:translate(-50%,-100%);
-          padding:5px 8px;
+          padding:5px 9px;
           border-radius:8px;
           background:rgba(6,78,59,.98);
           border:2px solid #34d399;
@@ -311,12 +360,16 @@ export function addAllMapplsLayers({
           white-space:nowrap;
           box-shadow:0 4px 12px rgba(0,0,0,.4);
         ">
-          🟢 ${point.name}
+          SAFE ${point.name}
         </div>
       `,
       `
-        <div style="padding:12px;font-family:Arial,sans-serif">
-          <strong>🟢 ${point.name}</strong>
+        <div style="
+          padding:12px;
+          min-width:210px;
+          font-family:Arial,sans-serif;
+        ">
+          <strong>${point.name}</strong>
           <br/><br/>
           Capacity: <b>${point.capacity}</b>
           <br/><br/>
@@ -335,9 +388,8 @@ export function addAllMapplsLayers({
   /*
    * CROWD
    *
-   * Uses crowdSimulation coordinates when available.
-   * This is intentionally lightweight so thousands of
-   * agents do not overwhelm the map.
+   * Render a lightweight sample so the map remains
+   * responsive even when thousands of agents exist.
    */
   const agents = crowdSimulation?.agents ?? [];
 
@@ -346,7 +398,10 @@ export function addAllMapplsLayers({
       agents.length > 250
         ? agents.filter(
             (_agent: any, index: number) =>
-              index % Math.ceil(agents.length / 250) === 0
+              index %
+                Math.ceil(
+                  agents.length / 250
+                ) === 0
           )
         : agents;
 
@@ -373,17 +428,13 @@ export function addAllMapplsLayers({
         const status =
           agent.status ?? "evacuating";
 
-        const color =
-          status === "trapped"
-            ? "#ef4444"
-            : status === "safe"
-              ? "#34d399"
-              : "#38bdf8";
-
         const marker =
           mapplsObject.Marker({
             map,
-            position: { lat, lng },
+            position: {
+              lat,
+              lng,
+            },
             width: 8,
             height: 8,
             html: `
@@ -391,9 +442,21 @@ export function addAllMapplsLayers({
                 width:8px;
                 height:8px;
                 border-radius:50%;
-                background:${color};
+                background:${
+                  status === "trapped"
+                    ? "#ef4444"
+                    : status === "safe"
+                      ? "#34d399"
+                      : "#38bdf8"
+                };
                 border:1px solid white;
-                box-shadow:0 0 7px ${color};
+                box-shadow:0 0 7px ${
+                  status === "trapped"
+                    ? "#ef4444"
+                    : status === "safe"
+                      ? "#34d399"
+                      : "#38bdf8"
+                };
               "></div>
             `,
           });

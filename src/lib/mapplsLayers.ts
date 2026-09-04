@@ -9,10 +9,11 @@ import {
 } from "../data/campusData";
 
 import {
-  buildingToMappls,
-  exitToMappls,
-  assemblyPointToMappls,
+  hasCoordinate,
+  mapplsCoordinateAdapter,
 } from "./mapplsCampus";
+
+import type { MapplsCoordinate } from "./mapplsCampus";
 
 interface MapplsLayerInput {
   map: any;
@@ -21,54 +22,7 @@ interface MapplsLayerInput {
   crowdSimulation?: CrowdSimulation;
 }
 
-type LatLng = {
-  lat: number;
-  lng: number;
-};
-
-const ROAD_PATHS: Record<string, LatLng[]> = {
-  r1: [
-    { lat: 17.45445, lng: 78.66635 },
-    { lat: 17.45475, lng: 78.66670 },
-    { lat: 17.45510, lng: 78.66705 },
-  ],
-
-  r2: [
-    { lat: 17.45510, lng: 78.66705 },
-    { lat: 17.45555, lng: 78.66720 },
-    { lat: 17.45645, lng: 78.66720 },
-  ],
-
-  r3: [
-    { lat: 17.45510, lng: 78.66705 },
-    { lat: 17.45515, lng: 78.66800 },
-    { lat: 17.45515, lng: 78.66915 },
-  ],
-
-  r4: [
-    { lat: 17.45445, lng: 78.66635 },
-    { lat: 17.45405, lng: 78.66655 },
-    { lat: 17.45355, lng: 78.66695 },
-  ],
-
-  r5: [
-    { lat: 17.45385, lng: 78.66680 },
-    { lat: 17.45415, lng: 78.66800 },
-    { lat: 17.45515, lng: 78.66915 },
-  ],
-
-  r6: [
-    { lat: 17.45645, lng: 78.66720 },
-    { lat: 17.45595, lng: 78.66820 },
-    { lat: 17.45515, lng: 78.66915 },
-  ],
-
-  r7: [
-    { lat: 17.45385, lng: 78.66680 },
-    { lat: 17.45390, lng: 78.66800 },
-    { lat: 17.45390, lng: 78.66890 },
-  ],
-};
+type LatLng = MapplsCoordinate;
 
 function addMarker(
   mapplsObject: any,
@@ -130,11 +84,16 @@ function addPolyline(
   }
 }
 
+/*
+ * Only features with surveyed geographic coordinates are drawn.
+ * Simulated 2D twin coordinates are never projected onto the map,
+ * so the native Mappls basemap and 3D buildings stay untouched
+ * until real coordinates are supplied.
+ */
 export function addAllMapplsLayers({
   map,
   mapplsObject,
   scenario,
-  crowdSimulation,
 }: MapplsLayerInput) {
   const affectedBuildings = new Set(
     scenario?.affectedBuildings ?? []
@@ -152,22 +111,24 @@ export function addAllMapplsLayers({
   const roadLayers: any[] = [];
   const exitLayers: any[] = [];
   const assemblyLayers: any[] = [];
-  const crowdLayers: any[] = [];
 
   /*
    * BUILDINGS
    */
   buildings.forEach((building) => {
-    const mapped = buildingToMappls(building);
+    const position =
+      mapplsCoordinateAdapter.building(building.id);
+
+    if (!hasCoordinate(position)) {
+      return;
+    }
+
     const affected = affectedBuildings.has(building.id);
 
     const marker = addMarker(
       mapplsObject,
       map,
-      {
-        lat: mapped.mappls.lat,
-        lng: mapped.mappls.lng,
-      },
+      position,
       `
         <div style="
           transform:translate(-50%,-100%);
@@ -223,9 +184,9 @@ export function addAllMapplsLayers({
    * ROADS
    */
   roads.forEach((road) => {
-    const path = ROAD_PATHS[road.id];
+    const path = mapplsCoordinateAdapter.road(road.id);
 
-    if (!path) {
+    if (!path || path.length < 2) {
       return;
     }
 
@@ -272,19 +233,21 @@ export function addAllMapplsLayers({
    * EMERGENCY EXITS
    */
   exits.forEach((exit) => {
-    const mapped = exitToMappls(exit);
+    const position =
+      mapplsCoordinateAdapter.exit(exit.id);
+
+    if (!hasCoordinate(position)) {
+      return;
+    }
 
     const blocked =
       blockedExits.has(exit.id) ||
-      Boolean(exit.blocked);
+      exit.status === "blocked";
 
     const marker = addMarker(
       mapplsObject,
       map,
-      {
-        lat: mapped.mappls.lat,
-        lng: mapped.mappls.lng,
-      },
+      position,
       `
         <div style="
           transform:translate(-50%,-100%);
@@ -338,16 +301,17 @@ export function addAllMapplsLayers({
    * ASSEMBLY POINTS
    */
   assemblyPoints.forEach((point) => {
-    const mapped =
-      assemblyPointToMappls(point);
+    const position =
+      mapplsCoordinateAdapter.assemblyPoint(point.id);
+
+    if (!hasCoordinate(position)) {
+      return;
+    }
 
     const marker = addMarker(
       mapplsObject,
       map,
-      {
-        lat: mapped.mappls.lat,
-        lng: mapped.mappls.lng,
-      },
+      position,
       `
         <div style="
           transform:translate(-50%,-100%);
@@ -385,96 +349,11 @@ export function addAllMapplsLayers({
     }
   });
 
-  /*
-   * CROWD
-   *
-   * Render a lightweight sample so the map remains
-   * responsive even when thousands of agents exist.
-   */
-  const agents = crowdSimulation?.agents ?? [];
-
-  if (mapplsObject.Marker && agents.length > 0) {
-    const sample =
-      agents.length > 250
-        ? agents.filter(
-            (_agent: any, index: number) =>
-              index %
-                Math.ceil(
-                  agents.length / 250
-                ) === 0
-          )
-        : agents;
-
-    sample.forEach((agent: any) => {
-      try {
-        const x = Number(agent.x);
-        const y = Number(agent.y);
-
-        if (
-          !Number.isFinite(x) ||
-          !Number.isFinite(y)
-        ) {
-          return;
-        }
-
-        const lng =
-          78.6645 +
-          (x / 1100) * 0.0085;
-
-        const lat =
-          17.4528 +
-          (1 - y / 650) * 0.0058;
-
-        const status =
-          agent.status ?? "evacuating";
-
-        const marker =
-          mapplsObject.Marker({
-            map,
-            position: {
-              lat,
-              lng,
-            },
-            width: 8,
-            height: 8,
-            html: `
-              <div style="
-                width:8px;
-                height:8px;
-                border-radius:50%;
-                background:${
-                  status === "trapped"
-                    ? "#ef4444"
-                    : status === "safe"
-                      ? "#34d399"
-                      : "#38bdf8"
-                };
-                border:1px solid white;
-                box-shadow:0 0 7px ${
-                  status === "trapped"
-                    ? "#ef4444"
-                    : status === "safe"
-                      ? "#34d399"
-                      : "#38bdf8"
-                };
-              "></div>
-            `,
-          });
-
-        if (marker) {
-          crowdLayers.push(marker);
-        }
-      } catch {
-        // Ignore individual crowd marker failures.
-      }
-    });
-  }
-
   return {
     buildings: buildingLayers,
     roads: roadLayers,
     exits: exitLayers,
     assemblyPoints: assemblyLayers,
-    crowd: crowdLayers,
+    crowd: [] as any[],
   };
 }

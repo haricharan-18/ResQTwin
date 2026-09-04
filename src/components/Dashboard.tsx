@@ -8,7 +8,7 @@ import AIChat from './AIChat';
 import CrowdPanel from './CrowdPanel';
 import EvacuationPanel from './EvacuationPanel';
 import DisasterControl from './DisasterControl';
-import DigitalTwin3D from './DigitalTwin3D';
+import MapplsTwin from './MapplsTwin';
 import RescuePanel from './RescuePanel';
 import RescueOperationPanel from './RescueOperationPanel';
 import RiskPanel from './RiskPanel';
@@ -197,7 +197,7 @@ export default function Dashboard() {
             {viewMode === '2d' ? (
               <Map onDisasterSelect={() => {}} scenario={evacuationScenario} crowdSimulation={crowdSimulation} />
             ) : (
-              <DigitalTwin3D scenario={evacuationScenario} crowdSimulation={crowdSimulation} />
+              <MapplsTwin scenario={evacuationScenario} crowdSimulation={crowdSimulation} />
             )}
           </div>
         </div>

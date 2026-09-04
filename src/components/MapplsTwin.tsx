@@ -4,6 +4,7 @@ import { mappls } from "mappls-web-maps";
 import {
   buildings,
   exits,
+  roads,
   assemblyPoints,
 } from "../data/campusData";
 
@@ -19,6 +20,62 @@ interface MapplsTwinProps {
   crowdSimulation?: any;
 }
 
+type Coord = {
+  lat: number;
+  lng: number;
+};
+
+/*
+ * Approximate evacuation-corridor anchors following the
+ * visible road structure around the SNIST campus.
+ *
+ * These are visualization corridors for the ResQTwin
+ * simulation; Mappls remains the underlying geographic map.
+ */
+const RESQTWIN_ROAD_PATHS: Record<string, Coord[]> = {
+  r1: [
+    { lat: 17.45445, lng: 78.66635 },
+    { lat: 17.45475, lng: 78.66670 },
+    { lat: 17.45510, lng: 78.66705 },
+  ],
+
+  r2: [
+    { lat: 17.45510, lng: 78.66705 },
+    { lat: 17.45555, lng: 78.66720 },
+    { lat: 17.45645, lng: 78.66720 },
+  ],
+
+  r3: [
+    { lat: 17.45510, lng: 78.66705 },
+    { lat: 17.45515, lng: 78.66800 },
+    { lat: 17.45515, lng: 78.66915 },
+  ],
+
+  r4: [
+    { lat: 17.45445, lng: 78.66635 },
+    { lat: 17.45405, lng: 78.66655 },
+    { lat: 17.45355, lng: 78.66695 },
+  ],
+
+  r5: [
+    { lat: 17.45385, lng: 78.66680 },
+    { lat: 17.45415, lng: 78.66800 },
+    { lat: 17.45515, lng: 78.66915 },
+  ],
+
+  r6: [
+    { lat: 17.45645, lng: 78.66720 },
+    { lat: 17.45595, lng: 78.66820 },
+    { lat: 17.45515, lng: 78.66915 },
+  ],
+
+  r7: [
+    { lat: 17.45385, lng: 78.66680 },
+    { lat: 17.45390, lng: 78.66800 },
+    { lat: 17.45390, lng: 78.66890 },
+  ],
+};
+
 const MapplsTwin: React.FC<MapplsTwinProps> = ({
   scenario,
   crowdSimulation,
@@ -31,44 +88,20 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
   const [mapReady, setMapReady] = useState(false);
   const [error, setError] = useState("");
 
-  /*
-   * Remove every ResQTwin overlay from Mappls.
-   */
-  const clearOverlays = () => {
-    const map = mapInstanceRef.current;
-    const mapplsObject = mapplsRef.current;
-
-    if (!map || !mapplsObject) {
-      overlaysRef.current = [];
-      return;
+  const removeOverlay = (overlay: any) => {
+    try {
+      overlay?.remove?.();
+    } catch {
+      // Ignore.
     }
+  };
 
-    overlaysRef.current.forEach((overlay) => {
-      try {
-        mapplsObject.removeLayer?.({
-          map,
-          layer: overlay,
-        });
-      } catch {
-        try {
-          overlay?.remove?.();
-        } catch {
-          // Ignore cleanup errors.
-        }
-      }
-    });
-
+  const clearOverlays = () => {
+    overlaysRef.current.forEach(removeOverlay);
     overlaysRef.current = [];
   };
 
-  /*
-   * Draw semantic ResQTwin intelligence on top of the
-   * REAL SNIST Mappls map.
-   *
-   * IMPORTANT:
-   * We do NOT recreate the old 2D campus geometry here.
-   */
-  const drawResQTwinLayers = (
+  const drawLayers = (
     map: any,
     mapplsObject: any
   ) => {
@@ -90,6 +123,11 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
         scenario?.affectedBuildings ?? []
       );
 
+    const blockedRoads =
+      new Set(
+        scenario?.blockedRoads ?? []
+      );
+
     const blockedExits =
       new Set(
         scenario?.blockedExits ?? []
@@ -99,20 +137,16 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
      * =====================================================
      * BUILDINGS
      * =====================================================
-     *
-     * We place a compact semantic marker at the
-     * building's real-campus anchor.
-     *
-     * The actual Mappls map remains visible underneath,
-     * including the real building footprint.
      */
     mapBuildings.forEach((building) => {
+      if (!mapplsObject.Marker) return;
+
+      const affected =
+        affectedBuildings.has(
+          building.id
+        );
+
       try {
-        if (!mapplsObject.Marker) return;
-
-        const affected =
-          affectedBuildings.has(building.id);
-
         const marker =
           mapplsObject.Marker({
             map,
@@ -123,78 +157,33 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
             },
 
             html: `
-              <div
-                style="
-                  transform:translate(-50%,-100%);
-                  display:flex;
-                  flex-direction:column;
-                  align-items:center;
-                  font-family:Arial,sans-serif;
-                  pointer-events:auto;
-                "
-              >
-                <div
-                  style="
-                    padding:6px 9px;
-                    border-radius:9px;
-                    background:${
-                      affected
-                        ? "rgba(127,29,29,0.97)"
-                        : "rgba(15,23,42,0.96)"
-                    };
-                    border:2px solid ${
-                      affected
-                        ? "#ef4444"
-                        : "#22d3ee"
-                    };
-                    color:#fff;
-                    font-size:11px;
-                    font-weight:800;
-                    white-space:nowrap;
-                    box-shadow:0 4px 14px rgba(0,0,0,.45);
-                  "
-                >
-                  ${
+              <div style="
+                transform:translate(-50%,-100%);
+                display:flex;
+                flex-direction:column;
+                align-items:center;
+                font-family:Arial,sans-serif;
+                pointer-events:auto;
+              ">
+                <div style="
+                  padding:6px 10px;
+                  border-radius:9px;
+                  background:${
                     affected
-                      ? "🚨 AFFECTED"
-                      : "🏢"
-                  }
-                  ${building.name}
-                </div>
-
-                <div
-                  style="
-                    width:11px;
-                    height:11px;
-                    margin-top:-1px;
-                    border-radius:50%;
-                    background:${
-                      affected
-                        ? "#ef4444"
-                        : "#22d3ee"
-                    };
-                    border:2px solid #fff;
-                    box-shadow:0 2px 8px rgba(0,0,0,.45);
-                  "
-                ></div>
-              </div>
-            `,
-
-            popupHtml: `
-              <div
-                style="
-                  padding:12px;
-                  min-width:220px;
-                  font-family:Arial,sans-serif;
-                "
-              >
-                <div
-                  style="
-                    font-size:16px;
-                    font-weight:700;
-                    margin-bottom:8px;
-                  "
-                >
+                      ? "rgba(127,29,29,.97)"
+                      : "rgba(15,23,42,.97)"
+                  };
+                  border:2px solid ${
+                    affected
+                      ? "#ef4444"
+                      : "#22d3ee"
+                  };
+                  color:white;
+                  font-size:11px;
+                  font-weight:800;
+                  white-space:nowrap;
+                  box-shadow:0 4px 14px rgba(0,0,0,.5);
+                ">
                   ${
                     affected
                       ? "🚨 "
@@ -203,60 +192,72 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
                   ${building.name}
                 </div>
 
-                <div
-                  style="
-                    font-size:12px;
-                    line-height:1.8;
-                  "
-                >
-                  👥 Occupants:
-                  <b>${building.occupants}</b>
-
-                  <br/>
-
-                  🏢 Capacity:
-                  <b>${building.capacity}</b>
-
-                  <br/>
-
-                  ⚠️ Base Risk:
-                  <b>${building.risk}/100</b>
-                </div>
-
-                <div
-                  style="
-                    margin-top:8px;
-                    font-weight:700;
-                    color:${
-                      affected
-                        ? "#dc2626"
-                        : "#059669"
-                    };
-                  "
-                >
-                  ${
+                <div style="
+                  width:10px;
+                  height:10px;
+                  margin-top:-1px;
+                  border-radius:50%;
+                  background:${
                     affected
-                      ? "🚨 AFFECTED BY ACTIVE DISASTER"
-                      : "✓ CURRENTLY SAFE"
-                  }
-                </div>
+                      ? "#ef4444"
+                      : "#22d3ee"
+                  };
+                  border:2px solid white;
+                "></div>
               </div>
             `,
 
-            popupOptions: {
-              maxWidth: 320,
-            },
+            popupHtml: `
+              <div style="
+                padding:12px;
+                min-width:210px;
+                font-family:Arial,sans-serif;
+              ">
+                <div style="
+                  font-size:16px;
+                  font-weight:700;
+                  margin-bottom:8px;
+                ">
+                  ${
+                    affected
+                      ? "🚨 "
+                      : "🏢 "
+                  }
+                  ${building.name}
+                </div>
 
-            width: 30,
-            height: 30,
+                👥 Occupants:
+                <b>${building.occupants}</b>
+
+                <br/>
+
+                ⚠️ Base Risk:
+                <b>${building.risk}/100</b>
+
+                <br/><br/>
+
+                <b style="
+                  color:${
+                    affected
+                      ? "#dc2626"
+                      : "#059669"
+                  };
+                ">
+                  ${
+                    affected
+                      ? "AFFECTED BY DISASTER"
+                      : "CURRENTLY SAFE"
+                  }
+                </b>
+              </div>
+            `,
           });
 
-        overlaysRef.current.push(
-          marker
-        );
+        overlaysRef.current.push(marker);
       } catch (e) {
         console.warn(
-          `Building marker failed: ${building.name}`,
+          "Building marker failed:",
+          building.name,
           e
         );
       }
@@ -264,16 +265,120 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
 
     /*
      * =====================================================
+     * 7 RESQTWIN EVACUATION ROADS
+     * =====================================================
+     */
+    if (mapplsObject.Polyline) {
+      roads.forEach((road) => {
+        const path =
+          RESQTWIN_ROAD_PATHS[
+            road.id
+          ];
+
+        if (!path) return;
+
+        const blocked =
+          blockedRoads.has(road.id) ||
+          road.blocked;
+
+        try {
+          const polyline =
+            mapplsObject.Polyline({
+              map,
+
+              path,
+
+              strokeColor:
+                blocked
+                  ? "#ef4444"
+                  : "#06b6d4",
+
+              strokeOpacity: blocked
+                ? 0.95
+                : 0.72,
+
+              strokeWeight:
+                blocked
+                  ? 8
+                  : 5,
+
+              zIndex:
+                blocked
+                  ? 30
+                  : 15,
+
+              popupHtml: `
+                <div style="
+                  padding:12px;
+                  min-width:200px;
+                  font-family:Arial,sans-serif;
+                ">
+                  <div style="
+                    font-size:15px;
+                    font-weight:700;
+                    margin-bottom:8px;
+                  ">
+                    ${
+                      blocked
+                        ? "🚧 "
+                        : "🛣️ "
+                    }
+                    ${road.name}
+                  </div>
+
+                  Distance:
+                  <b>${road.distance}m</b>
+
+                  <br/>
+
+                  Capacity:
+                  <b>${road.capacity}</b>
+
+                  <br/><br/>
+
+                  <b style="
+                    color:${
+                      blocked
+                        ? "#dc2626"
+                        : "#0891b2"
+                    };
+                  ">
+                    ${
+                      blocked
+                        ? "🚨 ROAD BLOCKED"
+                        : "✓ EVACUATION ROUTE OPEN"
+                    }
+                  </b>
+                </div>
+              `,
+            });
+
+          overlaysRef.current.push(
+            polyline
+          );
+        } catch (e) {
+          console.warn(
+            "Road overlay failed:",
+            road.name,
+            e
+          );
+        }
+      });
+    }
+
+    /*
+     * =====================================================
      * EMERGENCY EXITS
      * =====================================================
      */
     mapExits.forEach((exit) => {
+      if (!mapplsObject.Marker) return;
+
+      const blocked =
+        blockedExits.has(exit.id) ||
+        exit.blocked;
+
       try {
-        if (!mapplsObject.Marker) return;
-
-        const blocked =
-          blockedExits.has(exit.id);
-
         const marker =
           mapplsObject.Marker({
             map,
@@ -284,37 +389,29 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
             },
 
             html: `
-              <div
-                style="
-                  transform:translate(-50%,-100%);
-                  display:flex;
-                  flex-direction:column;
-                  align-items:center;
-                  font-family:Arial,sans-serif;
-                  pointer-events:auto;
-                "
-              >
-                <div
-                  style="
-                    padding:5px 8px;
-                    border-radius:8px;
-                    background:${
-                      blocked
-                        ? "rgba(127,29,29,0.97)"
-                        : "rgba(6,78,59,0.97)"
-                    };
-                    border:2px solid ${
-                      blocked
-                        ? "#ef4444"
-                        : "#34d399"
-                    };
-                    color:#fff;
-                    font-size:10px;
-                    font-weight:800;
-                    white-space:nowrap;
-                    box-shadow:0 4px 12px rgba(0,0,0,.4);
-                  "
-                >
+              <div style="
+                transform:translate(-50%,-100%);
+                font-family:Arial,sans-serif;
+              ">
+                <div style="
+                  padding:5px 8px;
+                  border-radius:8px;
+                  background:${
+                    blocked
+                      ? "rgba(127,29,29,.98)"
+                      : "rgba(6,78,59,.98)"
+                  };
+                  border:2px solid ${
+                    blocked
+                      ? "#ef4444"
+                      : "#34d399"
+                  };
+                  color:white;
+                  font-size:10px;
+                  font-weight:800;
+                  white-space:nowrap;
+                  box-shadow:0 4px 12px rgba(0,0,0,.45);
+                ">
                   ${
                     blocked
                       ? "🚫"
@@ -322,77 +419,52 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
                   }
                   ${exit.name}
                 </div>
-
-                <div
-                  style="
-                    width:9px;
-                    height:9px;
-                    margin-top:-1px;
-                    border-radius:50%;
-                    background:${
-                      blocked
-                        ? "#ef4444"
-                        : "#34d399"
-                    };
-                    border:2px solid #fff;
-                  "
-                ></div>
               </div>
             `,
 
             popupHtml: `
-              <div
-                style="
-                  padding:12px;
-                  font-family:Arial,sans-serif;
-                "
-              >
-                <div
-                  style="
-                    font-size:15px;
-                    font-weight:700;
-                  "
-                >
+              <div style="
+                padding:12px;
+                font-family:Arial,sans-serif;
+              ">
+                <b>
                   ${
                     blocked
                       ? "🚫 "
                       : "🚪 "
                   }
                   ${exit.name}
-                </div>
+                </b>
 
-                <br/>
+                <br/><br/>
 
                 Capacity:
                 <b>${exit.capacity}</b>
 
                 <br/><br/>
 
-                <b
-                  style="
-                    color:${
-                      blocked
-                        ? "#dc2626"
-                        : "#059669"
-                    };
-                  "
-                >
+                <b style="
+                  color:${
+                    blocked
+                      ? "#dc2626"
+                      : "#059669"
+                  };
+                ">
                   ${
                     blocked
-                      ? "🚨 EXIT BLOCKED"
-                      : "✓ EXIT AVAILABLE"
+                      ? "EXIT BLOCKED"
+                      : "EXIT AVAILABLE"
                   }
                 </b>
               </div>
             `,
           });
 
-        overlaysRef.current.push(
-          marker
-        );
+        overlaysRef.current.push(marker);
       } catch (e) {
         console.warn(
-          `Exit marker failed: ${exit.name}`,
+          "Exit marker failed:",
+          exit.name,
           e
         );
       }
@@ -404,9 +476,9 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
      * =====================================================
      */
     mapAssemblyPoints.forEach((point) => {
-      try {
-        if (!mapplsObject.Marker) return;
+      if (!mapplsObject.Marker) return;
 
+      try {
         const marker =
           mapplsObject.Marker({
             map,
@@ -417,63 +489,34 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
             },
 
             html: `
-              <div
-                style="
-                  transform:translate(-50%,-100%);
-                  display:flex;
-                  flex-direction:column;
-                  align-items:center;
-                  font-family:Arial,sans-serif;
-                  pointer-events:auto;
-                "
-              >
-                <div
-                  style="
-                    padding:5px 8px;
-                    border-radius:8px;
-                    background:rgba(6,78,59,0.97);
-                    border:2px solid #34d399;
-                    color:#fff;
-                    font-size:10px;
-                    font-weight:800;
-                    white-space:nowrap;
-                    box-shadow:0 4px 12px rgba(0,0,0,.4);
-                  "
-                >
+              <div style="
+                transform:translate(-50%,-100%);
+                font-family:Arial,sans-serif;
+              ">
+                <div style="
+                  padding:5px 8px;
+                  border-radius:8px;
+                  background:rgba(6,78,59,.98);
+                  border:2px solid #34d399;
+                  color:white;
+                  font-size:10px;
+                  font-weight:800;
+                  white-space:nowrap;
+                  box-shadow:0 4px 12px rgba(0,0,0,.4);
+                ">
                   🟢 ${point.name}
                 </div>
-
-                <div
-                  style="
-                    width:10px;
-                    height:10px;
-                    margin-top:-1px;
-                    border-radius:50%;
-                    background:#34d399;
-                    border:2px solid #fff;
-                  "
-                ></div>
               </div>
             `,
 
             popupHtml: `
-              <div
-                style="
-                  padding:12px;
-                  min-width:190px;
-                  font-family:Arial,sans-serif;
-                "
-              >
-                <div
-                  style="
-                    font-size:15px;
-                    font-weight:700;
-                  "
-                >
-                  🟢 ${point.name}
-                </div>
+              <div style="
+                padding:12px;
+                font-family:Arial,sans-serif;
+              ">
+                <b>🟢 ${point.name}</b>
 
-                <br/>
+                <br/><br/>
 
                 Capacity:
                 <b>${point.capacity}</b>
@@ -487,12 +530,11 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
             `,
           });
 
-        overlaysRef.current.push(
-          marker
-        );
+        overlaysRef.current.push(marker);
       } catch (e) {
         console.warn(
-          `Assembly marker failed: ${point.name}`,
+          "Assembly marker failed:",
+          point.name,
           e
         );
       }
@@ -501,7 +543,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
 
   /*
    * =====================================================
-   * MAP INITIALIZATION
+   * INITIALIZE MAPPLS
    * =====================================================
    */
   useEffect(() => {
@@ -518,13 +560,13 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
     let cancelled = false;
 
     try {
-      const mapplsClassObject =
+      const mapplsObject =
         new mappls();
 
       mapplsRef.current =
-        mapplsClassObject;
+        mapplsObject;
 
-      mapplsClassObject.initialize(
+      mapplsObject.initialize(
         key,
         {
           map: true,
@@ -540,13 +582,15 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
 
           try {
             const map =
-              mapplsClassObject.Map({
+              mapplsObject.Map({
                 id: "resqtwin-map",
 
                 properties: {
                   center: {
-                    lat: SNIST_MAP_CENTER.lat,
-                    lng: SNIST_MAP_CENTER.lng,
+                    lat:
+                      SNIST_MAP_CENTER.lat,
+                    lng:
+                      SNIST_MAP_CENTER.lng,
                   },
 
                   zoom: 17,
@@ -561,31 +605,24 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
             mapInstanceRef.current =
               map;
 
-            /*
-             * Give Mappls time to create the
-             * vector map before adding overlays.
-             */
             setTimeout(() => {
               if (cancelled) return;
 
               try {
                 if (
-                  mapplsClassObject.add3DModel
+                  mapplsObject.add3DModel
                 ) {
-                  mapplsClassObject.add3DModel({
+                  mapplsObject.add3DModel({
                     map,
                   });
                 }
-              } catch (e) {
-                console.warn(
-                  "Mappls 3D landmarks unavailable:",
-                  e
-                );
+              } catch {
+                // 3D landmarks are optional.
               }
 
-              drawResQTwinLayers(
+              drawLayers(
                 map,
-                mapplsClassObject
+                mapplsObject
               );
 
               setMapReady(true);
@@ -615,14 +652,13 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
       try {
         mapInstanceRef.current?.remove?.();
       } catch {
-        // Ignore cleanup errors.
+        // Ignore.
       }
 
       mapInstanceRef.current = null;
       mapplsRef.current = null;
     };
 
-    // Initialize Mappls only once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -630,9 +666,6 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
    * =====================================================
    * LIVE DISASTER UPDATE
    * =====================================================
-   *
-   * When fire/flood/etc. changes, redraw only the
-   * semantic ResQTwin markers.
    */
   useEffect(() => {
     if (
@@ -643,7 +676,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
       return;
     }
 
-    drawResQTwinLayers(
+    drawLayers(
       mapInstanceRef.current,
       mapplsRef.current
     );
@@ -657,20 +690,28 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
       scenario?.affectedBuildings ?? []
     ),
     JSON.stringify(
+      scenario?.blockedRoads ?? []
+    ),
+    JSON.stringify(
       scenario?.blockedExits ?? []
     ),
   ]);
 
   const affectedCount =
-    scenario?.affectedBuildings?.length ?? 0;
+    scenario?.affectedBuildings?.length ??
+    0;
+
+  const blockedRoadCount =
+    scenario?.blockedRoads?.length ??
+    0;
 
   const blockedExitCount =
-    scenario?.blockedExits?.length ?? 0;
+    scenario?.blockedExits?.length ??
+    0;
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-xl">
 
-      {/* REAL MAPPLS CAMPUS */}
       <div
         ref={mapRef}
         id="resqtwin-map"
@@ -680,9 +721,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
         }}
       />
 
-      {/* =================================================
-          RESQTWIN HEADER
-          ================================================= */}
+      {/* HEADER */}
       <div className="pointer-events-none absolute left-4 top-4 z-10">
         <div className="rounded-xl border border-cyan-400/20 bg-slate-950/95 px-4 py-3 shadow-2xl backdrop-blur">
 
@@ -711,16 +750,14 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
         </div>
       </div>
 
-      {/* =================================================
-          CAMPUS INTELLIGENCE
-          ================================================= */}
+      {/* INTELLIGENCE */}
       {mapReady && (
         <div className="pointer-events-none absolute left-4 top-24 z-10">
 
           <div className="rounded-xl border border-white/10 bg-slate-950/95 px-4 py-3 shadow-xl backdrop-blur">
 
             <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-cyan-300">
-              Live Campus Intelligence
+              ResQTwin Intelligence
             </div>
 
             <div className="grid grid-cols-2 gap-x-5 gap-y-2 text-xs">
@@ -735,7 +772,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
               <div className="text-slate-400">
                 Roads
                 <span className="ml-2 font-bold text-cyan-300">
-                  REAL
+                  7
                 </span>
               </div>
 
@@ -761,22 +798,30 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
               </div>
 
               <div className="text-slate-400">
-                Exit Alerts
+                Blocked Roads
                 <span className="ml-2 font-bold text-red-400">
-                  {blockedExitCount}
+                  {blockedRoadCount}
                 </span>
               </div>
 
             </div>
+
+            {blockedExitCount > 0 && (
+              <div className="mt-2 text-xs font-bold text-red-400">
+                🚫 {blockedExitCount} exit
+                {blockedExitCount > 1
+                  ? "s"
+                  : ""}{" "}
+                blocked
+              </div>
+            )}
 
           </div>
 
         </div>
       )}
 
-      {/* =================================================
-          ACTIVE DISASTER
-          ================================================= */}
+      {/* DISASTER */}
       {scenario && (
         <div className="pointer-events-none absolute right-4 top-4 z-10">
 
@@ -791,8 +836,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
             </div>
 
             <div className="text-xs text-slate-400">
-              Severity{" "}
-              {scenario.severity ?? 0}/5
+              Severity {scenario.severity ?? 0}/5
             </div>
 
           </div>
@@ -800,9 +844,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
         </div>
       )}
 
-      {/* =================================================
-          LIVE CROWD
-          ================================================= */}
+      {/* CROWD */}
       {crowdSimulation && (
         <div className="pointer-events-none absolute bottom-4 left-4 z-10">
 
@@ -852,28 +894,26 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
         </div>
       )}
 
-      {/* =================================================
-          LEGEND
-          ================================================= */}
+      {/* LEGEND */}
       {mapReady && (
         <div className="pointer-events-none absolute bottom-4 right-4 z-10">
 
           <div className="rounded-xl border border-white/10 bg-slate-950/95 px-4 py-3 shadow-xl backdrop-blur">
 
             <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-500">
-              ResQTwin Layer
+              ResQTwin Map Layer
             </div>
 
             <div className="space-y-1.5 text-xs">
 
               <div className="flex items-center gap-2 text-slate-300">
-                <span className="h-2.5 w-2.5 rounded-full bg-cyan-400" />
-                Campus building
+                <span className="h-1.5 w-6 rounded-full bg-cyan-400" />
+                Open evacuation road
               </div>
 
               <div className="flex items-center gap-2 text-slate-300">
-                <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-                Disaster affected
+                <span className="h-1.5 w-6 rounded-full bg-red-500" />
+                Blocked road / affected
               </div>
 
               <div className="flex items-center gap-2 text-slate-300">
@@ -888,9 +928,7 @@ const MapplsTwin: React.FC<MapplsTwinProps> = ({
         </div>
       )}
 
-      {/* =================================================
-          ERROR
-          ================================================= */}
+      {/* ERROR */}
       {error && (
         <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-950/90">
 

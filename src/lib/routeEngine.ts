@@ -1,4 +1,5 @@
 import { buildings, exits, roads } from '../data/campusData';
+import { BUILDING_JUNCTION, EXIT_JUNCTION, getBuildingZoneId } from '../data/digitalTwinModel';
 import type { DisasterScenario } from './disasterEngine';
 
 export interface EvacuationRoute {
@@ -36,21 +37,8 @@ type GraphEdge = {
  * practical campus junction.
  */
 
-const buildingJunction: Record<string, string> = {
-  b1: 'j2',
-  b2: 'j2',
-  b3: 'j3',
-  b4: 'j1',
-  b5: 'j5',
-  b6: 'j4'
-};
-
-const exitJunction: Record<string, string> = {
-  e1: 'j3',
-  e2: 'j1',
-  e3: 'j4',
-  e4: 'j5'
-};
+const buildingJunction = BUILDING_JUNCTION;
+const exitJunction = EXIT_JUNCTION;
 
 function buildGraph(blockedRoads: string[]): Map<string, GraphEdge[]> {
   const graph = new Map<string, GraphEdge[]>();
@@ -230,15 +218,7 @@ export function findSafestRoute(
   const graph = buildGraph(scenario.blockedRoads);
 
   const buildingRisk =
-    scenario.zoneRisks[
-      buildingId === 'b5'
-        ? 'z2'
-        : buildingId === 'b4'
-          ? 'z3'
-          : buildingId === 'b6'
-            ? 'z4'
-            : 'z1'
-    ] ?? building.risk;
+    scenario.zoneRisks[getBuildingZoneId(buildingId)] ?? building.risk;
 
   let bestRoute: EvacuationRoute | null = null;
 
@@ -294,17 +274,13 @@ export function findSafestRoute(
         averageCongestion * 3
     );
 
-    const roadNames = result.path.map(
-      (edge) =>
-        roads.find((road) => road.id === edge.roadId)?.name ??
-        edge.roadId
-    );
+    const roadIds = result.path.map((edge) => edge.roadId);
 
     const candidate: EvacuationRoute = {
       personOrBuilding: building.name,
       exitId: exit.id,
       exitName: exit.name,
-      roads: roadNames,
+      roads: roadIds,
       distance: totalDistance,
       risk,
       congestion: averageCongestion,

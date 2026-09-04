@@ -8,7 +8,6 @@ import AIChat from './AIChat';
 import CrowdPanel from './CrowdPanel';
 import EvacuationPanel from './EvacuationPanel';
 import DisasterControl from './DisasterControl';
-import DigitalTwin3D from './DigitalTwin3D';
 import MapplsTwin from './MapplsTwin';
 import RescuePanel from './RescuePanel';
 import RescueOperationPanel from './RescueOperationPanel';
@@ -30,7 +29,6 @@ import { calculateEvacuationTime } from '../lib/evacuationTimeEngine';
 import { calculateShelterAllocation } from '../lib/shelterEngine';
 
 import { createCrowdSimulation, CrowdSimulation } from '../lib/crowdEngine';
-import { buildDigitalTwinState } from '../lib/digitalTwinState';
 
 const StatCard = ({
   icon: Icon,
@@ -91,16 +89,6 @@ export default function Dashboard() {
   const evacuationTimeSummary = useMemo(
     () => calculateEvacuationTime(evacuationScenario, crowdSimulation),
     [evacuationScenario, crowdSimulation]
-  );
-
-  const twinState = useMemo(
-    () =>
-      buildDigitalTwinState({
-        scenario: evacuationScenario,
-        crowd: crowdSimulation,
-        risk: riskSummary,
-      }),
-    [evacuationScenario, crowdSimulation, riskSummary]
   );
 
   useEffect(() => {
@@ -207,14 +195,9 @@ export default function Dashboard() {
 
           <div className="h-[calc(100%-61px)] min-h-0">
             {viewMode === '2d' ? (
-              <Map
-                onDisasterSelect={() => {}}
-                scenario={evacuationScenario}
-                crowdSimulation={crowdSimulation}
-                twinState={twinState}
-              />
+              <Map onDisasterSelect={() => {}} scenario={evacuationScenario} crowdSimulation={crowdSimulation} />
             ) : (
-              <DigitalTwin3D twinState={twinState} />
+              <MapplsTwin scenario={evacuationScenario} crowdSimulation={crowdSimulation} />
             )}
           </div>
         </div>
@@ -336,6 +319,3 @@ export default function Dashboard() {
     </div>
   );
 }
-
-
-

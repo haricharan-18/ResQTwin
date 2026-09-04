@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Navigation, ShieldCheck, AlertTriangle, Route, Users } from 'lucide-react';
-import { buildings } from '../data/campusData';
+import { buildings, roads } from '../data/campusData';
 import { findSafestRoute } from '../lib/routeEngine';
 import type { DisasterScenario } from '../lib/disasterEngine';
 
@@ -204,18 +204,26 @@ export default function EvacuationPanel({
             </div>
 
             <div className="space-y-2">
-              {route.roads.map((road, index) => (
-                <div
-                  key={`${road}-${index}`}
-                  className="flex items-center gap-3"
-                >
-                  <div className="w-7 h-7 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-300 text-sm">
-                    {index + 1}
-                  </div>
-
-                  <span>{road}</span>
+              {route.roads.length === 0 ? (
+                <div className="text-sm text-slate-300">
+                  Direct access to {route.exitName}
                 </div>
-              ))}
+              ) : (
+                route.roads.map((roadId, index) => (
+                  <div
+                    key={`${roadId}-${index}`}
+                    className="flex items-center gap-3"
+                  >
+                    <div className="w-7 h-7 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-300 text-sm">
+                      {index + 1}
+                    </div>
+
+                    <span>
+                      {roads.find((item) => item.id === roadId)?.name ?? roadId}
+                    </span>
+                  </div>
+                ))
+              )}
 
               <div className="flex items-center gap-3 mt-3">
                 <div className="w-7 h-7 rounded-full bg-green-500/20 flex items-center justify-center">

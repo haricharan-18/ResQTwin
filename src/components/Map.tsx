@@ -1,105 +1,85 @@
-﻿import React, { useState } from 'react';
-import {
-  buildings,
-  exits,
-  roads,
-  assemblyPoints
-} from '../data/campusData';
-
-import { generateCampusCrowd } from '../lib/crowdGenerator';
-
-import { DisasterScenario } from '../lib/disasterEngine';
-import { CrowdSimulation } from '../lib/crowdEngine';
+﻿import React, { useMemo, useState } from 'react';
+import type { DisasterScenario } from '../lib/disasterEngine';
+import type { CrowdSimulation } from '../lib/crowdEngine';
+import type { DigitalTwinState } from '../lib/digitalTwinState';
+import { CAMPUS_VIEWBOX } from '../data/digitalTwinModel';
+import DigitalTwinOverlay from './DigitalTwinOverlay';
 
 interface DisasterMapProps {
   onDisasterSelect?: (id: string) => void;
   scenario?: DisasterScenario;
   crowdSimulation?: CrowdSimulation;
+  twinState: DigitalTwinState;
+  onSelectFeature?: (id: string | null) => void;
 }
 
-const roadPositions: Record<string, [number, number, number, number]> = {
-  r1: [350, 270, 500, 270],
-  r2: [500, 270, 540, 70],
-  r3: [500, 270, 850, 300],
-  r4: [350, 450, 500, 560],
-  r5: [580, 500, 850, 300],
-  r6: [540, 70, 850, 300],
-  r7: [580, 500, 850, 540]
-};
+function crowdColor(status: string, risk: number) {
+  if (status === 'trapped') return '#ef4444';
+  if (status === 'safe') return '#22c55e';
+  if (status === 'evacuating') return '#38bdf8';
+  if (risk >= 60) return '#ef4444';
+  if (risk >= 40) return '#f59e0b';
+  return '#22c55e';
+}
+
+function roadStroke(visual: string) {
+  switch (visual) {
+    case 'blocked':
+    case 'critical':
+      return '#ef4444';
+    case 'congested':
+      return '#f59e0b';
+    case 'route':
+      return '#38bdf8';
+    default:
+      return '#64748b';
+  }
+}
+
+function buildingFill(visual: string) {
+  switch (visual) {
+    case 'critical':
+      return '#7f1d1d';
+    case 'affected':
+      return '#991b1b';
+    case 'high-risk':
+      return '#7c2d12';
+    default:
+      return '#1e3a5f';
+  }
+}
 
 export default function DisasterMap({
   onDisasterSelect,
-  scenario,
-  crowdSimulation
+  twinState,
+  onSelectFeature,
 }: DisasterMapProps) {
-  const [selectedBuilding, setSelectedBuilding] =
-    useState<string | null>(null);
+  const [localSelected, setLocalSelected] = useState<string | null>(null);
+  const selected = twinState.selectedFeatureId ?? localSelected;
 
- const crowd =
-  crowdSimulation?.agents ??
-  generateCampusCrowd();
- const affectedBuildings = scenario?.affectedBuildings ?? [];
-const blockedRoads = scenario?.blockedRoads ?? [];
-const blockedExits = scenario?.blockedExits ?? [];
+  const crowdSample = useMemo(() => {
+    const agents = twinState.people;
+    if (agents.length <= 400) return agents;
+    const step = Math.ceil(agents.length / 400);
+    return agents.filter((_, index) => index % step === 0);
+  }, [twinState.people]);
+
+  const select = (id: string) => {
+    setLocalSelected(id);
+    onSelectFeature?.(id);
+    onDisasterSelect?.(id);
+  };
 
   return (
-    <div className="relative w-full h-full overflow-hidden rounded-xl bg-slate-950">
+    <div className="relative h-full w-full overflow-hidden rounded-xl bg-slate-950">
+      <DigitalTwinOverlay twinState={twinState} compact />
 
-      {/* Header */}
-      <div className="absolute top-4 left-4 z-10 rounded-lg bg-slate-900/95 border border-slate-700 px-4 py-3 shadow-xl">
-        <div className="flex items-center gap-3">
-          <div className="w-3 h-3 rounded-full bg-green-400 animate-pulse" />
-          <div>
-            <h2 className="text-white font-bold text-lg">
-              ResQTwin Digital Twin
-            </h2>
-            <p className="text-slate-400 text-xs">
-              Offline Campus Simulation
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Statistics */}
-      <div className="absolute top-4 right-4 z-10 grid grid-cols-2 gap-2">
-        <div className="bg-slate-900/95 border border-slate-700 rounded-lg px-3 py-2">
-          <div className="text-slate-400 text-xs">Population</div>
-          <div className="text-white font-bold">{2630}</div>
-        </div>
-
-        <div className="bg-slate-900/95 border border-slate-700 rounded-lg px-3 py-2">
-          <div className="text-slate-400 text-xs">Buildings</div>
-          <div className="text-white font-bold">{buildings.length}</div>
-        </div>
-
-        <div className="bg-slate-900/95 border border-slate-700 rounded-lg px-3 py-2">
-          <div className="text-slate-400 text-xs">Exits</div>
-          <div className="text-green-400 font-bold">{exits.length}</div>
-        </div>
-
-        <div className="bg-slate-900/95 border border-slate-700 rounded-lg px-3 py-2">
-          <div className="text-slate-400 text-xs">Roads</div>
-          <div className="text-white font-bold">{roads.length}</div>
-        </div>
-      </div>
-
-      {/* Digital Twin Canvas */}
       <svg
-        viewBox="0 0 1100 680"
-        className="w-full h-full"
+        viewBox={`0 0 ${CAMPUS_VIEWBOX.width} ${CAMPUS_VIEWBOX.height}`}
+        className="h-full w-full"
         preserveAspectRatio="xMidYMid meet"
       >
-
-        {/* Campus background */}
-        <rect
-          x="0"
-          y="0"
-          width="1100"
-          height="680"
-          fill="#0f172a"
-        />
-
-        {/* Campus boundary */}
+        <rect width={CAMPUS_VIEWBOX.width} height={CAMPUS_VIEWBOX.height} fill="#0f172a" />
         <rect
           x="45"
           y="45"
@@ -112,99 +92,67 @@ const blockedExits = scenario?.blockedExits ?? [];
           strokeDasharray="10 8"
         />
 
-        {/* Campus title */}
-        <text
-          x="550"
-          y="65"
-          textAnchor="middle"
-          fill="#64748b"
-          fontSize="16"
-          fontWeight="bold"
-        >
-          RESQTWIN â€” FICTIONAL UNIVERSITY CAMPUS
-        </text>
+        {twinState.zones.map((zone) => (
+          <rect
+            key={zone.id}
+            x={zone.bounds.minX}
+            y={zone.bounds.minY}
+            width={zone.bounds.maxX - zone.bounds.minX}
+            height={zone.bounds.maxY - zone.bounds.minY}
+            fill={
+              zone.riskLevel === 'critical'
+                ? '#ef4444'
+                : zone.riskLevel === 'high'
+                  ? '#f97316'
+                  : zone.riskLevel === 'medium'
+                    ? '#eab308'
+                    : '#22c55e'
+            }
+            opacity="0.08"
+          />
+        ))}
 
-        {/* Roads */}
-        {Object.entries(roadPositions).map(
-          ([roadId, [x1, y1, x2, y2]]) => {
-            const road = roads.find(r => r.id === roadId);
-            if (!road) return null;
+        {twinState.roads.map((road) => {
+          const from = road.polyline[0];
+          const to = road.polyline[1];
+          if (!from || !to) return null;
+          const selectedRoad = selected === road.id;
+          return (
+            <g
+              key={road.id}
+              className="cursor-pointer"
+              onClick={() => select(road.id)}
+            >
+              <line
+                x1={from.x}
+                y1={from.y}
+                x2={to.x}
+                y2={to.y}
+                stroke={selectedRoad ? '#e0f2fe' : roadStroke(road.visual)}
+                strokeWidth={road.blocked ? 18 : road.onEvacuationRoute ? 16 : 14}
+                strokeLinecap="round"
+              />
+              {(road.blocked || road.visual === 'critical') && (
+                <text
+                  x={(from.x + to.x) / 2}
+                  y={(from.y + to.y) / 2 - 10}
+                  textAnchor="middle"
+                  fill="#f87171"
+                  fontSize="13"
+                  fontWeight="bold"
+                >
+                  {road.id} BLOCKED
+                </text>
+              )}
+            </g>
+          );
+        })}
 
-            return (
-              <g key={road.id}>
-                {/* road shadow */}
-                <line
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke="#020617"
-                  strokeWidth="22"
-                  strokeLinecap="round"
-                />
-
-                {/* road */}
-                <line
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                 stroke={
-  road.blocked || blockedRoads.includes(road.id)
-    ? "#ef4444"
-    : "#475569"
-}
-                  strokeWidth="14"
-                  strokeLinecap="round"
-                />
-
-                {/* road center */}
-                <line
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                stroke={
-  road.blocked || blockedRoads.includes(road.id)
-    ? "#ef4444"
-    : "#94a3b8"
-}
-                  strokeWidth="2"
-                  strokeDasharray="12 8"
-                />
-
-                {/* blocked indicator */}
-              {(road.blocked || blockedRoads.includes(road.id)) && (
-                  <text
-                    x={(x1 + x2) / 2}
-                    y={(y1 + y2) / 2 - 10}
-                    textAnchor="middle"
-                    fill="#f87171"
-                    fontSize="13"
-                    fontWeight="bold"
-                  >
-                    BLOCKED
-                  </text>
-                )}
-              </g>
-            );
-          }
-        )}
-
-        {/* Junctions */}
-        {[
-          [350, 270],
-          [500, 270],
-          [540, 70],
-          [850, 300],
-          [350, 450],
-          [580, 500],
-          [850, 540]
-        ].map(([x, y], index) => (
+        {twinState.junctions.map((junction) => (
           <circle
-            key={index}
-            cx={x}
-            cy={y}
+            key={junction.id}
+            cx={junction.x}
+            cy={junction.y}
             r="7"
             fill="#cbd5e1"
             stroke="#0f172a"
@@ -212,19 +160,13 @@ const blockedExits = scenario?.blockedExits ?? [];
           />
         ))}
 
-        {/* Buildings */}
-        {buildings.map(building => {
-          const affected = affectedBuildings.includes(building.id);
-const selected = selectedBuilding === building.id;
-
+        {twinState.buildings.map((building) => {
+          const isSelected = selected === building.id;
           return (
             <g
               key={building.id}
-              onClick={() => {
-                setSelectedBuilding(building.id);
-                onDisasterSelect?.(building.id);
-              }}
               className="cursor-pointer"
+              onClick={() => select(building.id)}
             >
               <rect
                 x={building.x}
@@ -232,122 +174,75 @@ const selected = selectedBuilding === building.id;
                 width={building.width}
                 height={building.height}
                 rx="10"
-                fill={
-  affected
-    ? "#991b1b"
-    : building.risk >= 50
-    ? "#7f1d1d"
-    : building.risk >= 35
-    ? "#78350f"
-    : "#1e3a5f"
-}
-               stroke={
-  selected
-    ? "#ffffff"
-    : affected
-    ? "#ff4444"
-    : building.risk >= 50
-    ? "#ef4444"
-    : "#475569"
-}
-                strokeWidth={selected ? 4 : 2}
+                fill={buildingFill(building.visual)}
+                stroke={isSelected ? '#ffffff' : building.affected ? '#ff4444' : '#475569'}
+                strokeWidth={isSelected ? 4 : 2}
               />
-
-              {/* Building roof/detail */}
-              <rect
-                x={building.x + 12}
-                y={building.y + 12}
-                width={building.width - 24}
-                height="8"
-                rx="4"
-                fill="#64748b"
-                opacity="0.6"
-              />
-
-    {/* Building name */}
-<text
-  x={building.x + building.width / 2}
-  y={building.y + building.height / 2 - 8}
-  textAnchor="middle"
-  fill="white"
-  fontSize="15"
-  fontWeight="bold"
->
-  {building.name}
-</text>
-
-{/* Affected indicator */}
-{affected && (
-  <text
-    x={building.x + building.width / 2}
-    y={building.y + 18}
-    textAnchor="middle"
-    fill="#fecaca"
-    fontSize="10"
-    fontWeight="bold"
-  >
-    âš  AFFECTED
-  </text>
-)}
-
-              {/* Occupants */}
+              {building.affected && (
+                <text
+                  x={building.center.x}
+                  y={building.y + 18}
+                  textAnchor="middle"
+                  fill="#fecaca"
+                  fontSize="10"
+                  fontWeight="bold"
+                >
+                  AFFECTED
+                </text>
+              )}
               <text
-                x={building.x + building.width / 2}
-                y={building.y + building.height / 2 + 15}
+                x={building.center.x}
+                y={building.center.y - 8}
+                textAnchor="middle"
+                fill="white"
+                fontSize="15"
+                fontWeight="bold"
+              >
+                {building.name}
+              </text>
+              <text
+                x={building.center.x}
+                y={building.center.y + 14}
                 textAnchor="middle"
                 fill="#cbd5e1"
                 fontSize="12"
               >
-                ðŸ‘¥ {building.occupants} occupants
+                {building.occupants} occupants
               </text>
-
-              {/* Risk */}
               <text
-                x={building.x + building.width / 2}
-                y={building.y + building.height / 2 + 35}
+                x={building.center.x}
+                y={building.center.y + 32}
                 textAnchor="middle"
                 fill={
-                  building.risk >= 50
-                    ? "#fca5a5"
-                    : building.risk >= 35
-                    ? "#fcd34d"
-                    : "#86efac"
+                  building.riskLevel === 'critical' || building.riskLevel === 'high'
+                    ? '#fca5a5'
+                    : building.riskLevel === 'medium'
+                      ? '#fcd34d'
+                      : '#86efac'
                 }
                 fontSize="11"
                 fontWeight="bold"
               >
-                RISK {building.risk}%
+                {building.id} RISK {building.riskScore}
               </text>
             </g>
           );
         })}
 
-        {/* Assembly points */}
-        {assemblyPoints.map(point => (
+        {twinState.assemblyPoints.map((point) => (
           <g key={point.id}>
             <circle
               cx={point.x}
               cy={point.y}
-              r="32"
+              r={point.radius}
               fill="#14532d"
               opacity="0.9"
               stroke="#4ade80"
               strokeWidth="3"
             />
-
             <text
               x={point.x}
-              y={point.y - 5}
-              textAnchor="middle"
-              fill="#86efac"
-              fontSize="20"
-            >
-              âœ“
-            </text>
-
-            <text
-              x={point.x}
-              y={point.y + 12}
+              y={point.y - 4}
               textAnchor="middle"
               fill="white"
               fontSize="10"
@@ -355,50 +250,28 @@ const selected = selectedBuilding === building.id;
             >
               ASSEMBLY
             </text>
-
             <text
               x={point.x}
-              y={point.y + 50}
+              y={point.y + 12}
               textAnchor="middle"
-              fill="#94a3b8"
+              fill="#bbf7d0"
               fontSize="10"
             >
-              {point.name}
+              {point.currentPopulation}/{point.capacity}
             </text>
           </g>
         ))}
 
-        {/* Emergency exits */}
-        {exits.map(exit => (
-          <g key={exit.id}>
+        {twinState.exits.map((exit) => (
+          <g key={exit.id} className="cursor-pointer" onClick={() => select(exit.id)}>
             <circle
               cx={exit.x}
               cy={exit.y}
               r="18"
-             fill={
-  exit.status === "open" && !blockedExits.includes(exit.id)
-    ? "#166534"
-    : "#991b1b"
-}
-           stroke={
-  exit.status === "open" && !blockedExits.includes(exit.id)
-    ? "#4ade80"
-    : "#f87171"
-}
-              strokeWidth="3"
+              fill={exit.blocked ? '#991b1b' : '#166534'}
+              stroke={exit.blocked ? '#f87171' : '#4ade80'}
+              strokeWidth={selected === exit.id ? 4 : 3}
             />
-
-            <text
-              x={exit.x}
-              y={exit.y + 5}
-              textAnchor="middle"
-              fill="white"
-              fontSize="14"
-              fontWeight="bold"
-            >
-              â†’
-            </text>
-
             <text
               x={exit.x}
               y={exit.y - 26}
@@ -409,133 +282,76 @@ const selected = selectedBuilding === building.id;
             >
               {exit.name}
             </text>
-
             <text
               x={exit.x}
               y={exit.y + 34}
               textAnchor="middle"
-      fill={
-  exit.status === "open" && !blockedExits.includes(exit.id)
-    ? "#86efac"
-    : "#fca5a5"
-}
+              fill={exit.blocked ? '#fca5a5' : '#86efac'}
               fontSize="9"
             >
-            {blockedExits.includes(exit.id)
-  ? "BLOCKED"
-  : exit.status.toUpperCase()}
+              {exit.blocked ? 'BLOCKED' : 'OPEN'}
             </text>
           </g>
         ))}
 
-        {/* People */}
-       {crowd.map(person => (
-          <g key={person.id}>
-            <circle
-              cx={person.x}
-              cy={person.y}
-              r="6"
-              fill={
-                person.risk >= 60
-                  ? "#ef4444"
-                  : person.risk >= 40
-                  ? "#f59e0b"
-                  : "#22c55e"
-              }
-              stroke="#ffffff"
-              strokeWidth="1.5"
-            />
-          </g>
-        ))}
-
-        {/* Legend */}
-        <g transform="translate(70 590)">
-          <rect
-            x="0"
-            y="0"
-            width="360"
-            height="32"
-            rx="8"
-            fill="#020617"
-            opacity="0.9"
+        {crowdSample.map((person) => (
+          <circle
+            key={person.id}
+            cx={person.x}
+            cy={person.y}
+            r="4"
+            fill={crowdColor(person.status, person.risk)}
+            stroke="#ffffff"
+            strokeWidth="0.8"
           />
-
-          <circle cx="20" cy="16" r="6" fill="#22c55e" />
-          <text x="32" y="20" fill="#cbd5e1" fontSize="10">
-            Low Risk
-          </text>
-
-          <circle cx="105" cy="16" r="6" fill="#f59e0b" />
-          <text x="117" y="20" fill="#cbd5e1" fontSize="10">
-            Medium Risk
-          </text>
-
-          <circle cx="205" cy="16" r="6" fill="#ef4444" />
-          <text x="217" y="20" fill="#cbd5e1" fontSize="10">
-            High Risk
-          </text>
-
-          <circle cx="305" cy="16" r="6" fill="#4ade80" />
-          <text x="317" y="20" fill="#cbd5e1" fontSize="10">
-            Exit
-          </text>
-        </g>
+        ))}
       </svg>
 
-      {/* Selected building panel */}
-      {selectedBuilding && (
-        <div className="absolute bottom-4 right-4 z-10 w-64 rounded-xl bg-slate-900/95 border border-slate-700 p-4 shadow-xl">
+      {selected && (
+        <div className="absolute bottom-4 right-4 z-20 w-64 rounded-xl border border-slate-700 bg-slate-900/95 p-4 shadow-xl">
           {(() => {
-            const building = buildings.find(
-              b => b.id === selectedBuilding
-            );
-
-            if (!building) return null;
-
+            const building = twinState.buildings.find((item) => item.id === selected);
+            const road = twinState.roads.find((item) => item.id === selected);
+            const exit = twinState.exits.find((item) => item.id === selected);
+            const feature = building ?? road ?? exit;
+            if (!feature) return null;
             return (
               <>
-                <div className="flex items-center justify-between mb-2">
-                  <h3 className="text-white font-bold">
-                    {building.name}
+                <div className="mb-2 flex items-center justify-between">
+                  <h3 className="font-bold text-white">
+                    {'name' in feature ? feature.name : feature.id} ({feature.id})
                   </h3>
-
                   <button
-                    onClick={() => setSelectedBuilding(null)}
+                    onClick={() => {
+                      setLocalSelected(null);
+                      onSelectFeature?.(null);
+                    }}
                     className="text-slate-400 hover:text-white"
                   >
-                    Ã—
+                    ×
                   </button>
                 </div>
-
-                <div className="space-y-2 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Capacity</span>
-                    <span className="text-white">
-                      {building.capacity}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Occupants</span>
-                    <span className="text-white">
-                      {building.occupants}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Risk</span>
-                    <span
-                      className={
-                        building.risk >= 50
-                          ? "text-red-400"
-                          : building.risk >= 35
-                          ? "text-yellow-400"
-                          : "text-green-400"
-                      }
-                    >
-                      {building.risk}%
-                    </span>
-                  </div>
+                <div className="space-y-1 text-xs text-slate-300">
+                  {building && (
+                    <>
+                      <div>Occupants {building.occupants}/{building.capacity}</div>
+                      <div>Risk {building.riskScore}/100</div>
+                      <div>{building.affected ? 'Affected' : 'Operational'}</div>
+                    </>
+                  )}
+                  {road && (
+                    <>
+                      <div>Capacity {road.capacity}</div>
+                      <div>Congestion {Math.round(road.congestion)}%</div>
+                      <div>{road.blocked ? 'Blocked' : 'Open'}</div>
+                    </>
+                  )}
+                  {exit && (
+                    <>
+                      <div>Capacity {exit.capacity}</div>
+                      <div>{exit.blocked ? 'Blocked' : 'Open'}</div>
+                    </>
+                  )}
                 </div>
               </>
             );

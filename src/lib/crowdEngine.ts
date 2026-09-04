@@ -1,6 +1,7 @@
 import {
   buildings,
   exits,
+  roads,
   CampusPerson
 } from '../data/campusData';
 
@@ -664,61 +665,7 @@ function findRoad(
   roadId: string
 ) {
 
-  const roadMap:
-    Record<
-      string,
-      {
-        id: string;
-        name: string;
-        capacity: number;
-      }
-    > = {
-
-    r1: {
-      id: 'r1',
-      name: 'Central Road',
-      capacity: 500
-    },
-
-    r2: {
-      id: 'r2',
-      name: 'North Road',
-      capacity: 400
-    },
-
-    r3: {
-      id: 'r3',
-      name: 'East Road',
-      capacity: 350
-    },
-
-    r4: {
-      id: 'r4',
-      name: 'South Road',
-      capacity: 600
-    },
-
-    r5: {
-      id: 'r5',
-      name: 'Hostel Road',
-      capacity: 300
-    },
-
-    r6: {
-      id: 'r6',
-      name: 'Library Road',
-      capacity: 350
-    },
-
-    r7: {
-      id: 'r7',
-      name: 'Emergency Bridge',
-      capacity: 250
-    }
-  };
-
-
-  return roadMap[roadId];
+  return roads.find((item) => item.id === roadId);
 }
 
 

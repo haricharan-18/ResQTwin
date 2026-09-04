@@ -1,4 +1,4 @@
-import { buildings, roads, exits, CampusZone } from '../data/campusData';
+import { buildings, campusZones, roads } from '../data/campusData';
 
 export type DisasterType =
   | 'fire'
@@ -124,35 +124,7 @@ export function simulateDisaster(
     }
   }
 
-  // Calculate zone risk
-  const zones: CampusZone[] = [
-    {
-      id: 'z1',
-      name: 'Academic Zone',
-      risk: 38,
-      population: 1130
-    },
-    {
-      id: 'z2',
-      name: 'Residential Zone',
-      risk: 55,
-      population: 850
-    },
-    {
-      id: 'z3',
-      name: 'Administration Zone',
-      risk: 20,
-      population: 210
-    },
-    {
-      id: 'z4',
-      name: 'Sports Zone',
-      risk: 18,
-      population: 160
-    }
-  ];
-
-  zones.forEach((zone) => {
+  campusZones.forEach((zone) => {
     let risk = zone.risk;
 
     if (type === 'fire' && zone.id === 'z1') {

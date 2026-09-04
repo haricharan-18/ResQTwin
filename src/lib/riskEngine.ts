@@ -4,6 +4,7 @@ import {
   exits,
   roads
 } from '../data/campusData';
+import { getBuildingZoneId } from '../data/digitalTwinModel';
 
 import {
   DisasterScenario
@@ -95,21 +96,9 @@ export function calculateRiskAssessment(
       );
 
 
-    const zone =
-      campusZones.find(
-        (item) =>
-          (
-            building.id === 'b1' ||
-            building.id === 'b2' ||
-            building.id === 'b3'
-          )
-            ? item.id === 'z1'
-            : building.id === 'b4'
-            ? item.id === 'z3'
-            : building.id === 'b5'
-            ? item.id === 'z2'
-            : 'z4'
-      );
+    const zone = campusZones.find(
+      (item) => item.id === getBuildingZoneId(building.id)
+    );
 
 
     const zoneRisk =

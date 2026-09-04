@@ -370,10 +370,10 @@ export const campusPeople: CampusPerson[] = [
 ========================================================= */
 
 export const campusStats = {
-  totalPopulation: 2630,
-  buildings: 6,
-  exits: 4,
-  roads: 7,
-  assemblyPoints: 2,
-  zones: 4
+  totalPopulation: buildings.reduce((sum, building) => sum + building.occupants, 0),
+  buildings: buildings.length,
+  exits: exits.length,
+  roads: roads.length,
+  assemblyPoints: assemblyPoints.length,
+  zones: campusZones.length
 };

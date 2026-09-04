@@ -1,27 +1,18 @@
 import { useEffect, useRef } from "react";
 import { mappls } from "mappls-web-maps";
 
-import type { DisasterScenario } from "../lib/disasterEngine";
-import type { CrowdSimulation } from "../lib/crowdEngine";
-
+import type { DigitalTwinState } from "../lib/digitalTwinState";
+import { CAMPUS_MAP_CENTER } from "../data/digitalTwinModel";
 import { addAllMapplsLayers } from "../lib/mapplsLayers";
+import DigitalTwinOverlay from "./DigitalTwinOverlay";
 
 interface MapplsMapProps {
-  scenario?: DisasterScenario;
-  crowdSimulation?: CrowdSimulation;
+  twinState: DigitalTwinState;
 }
 
 const MAPPLS_KEY = import.meta.env.VITE_MAPPLS_KEY;
 
-const SNIST_CENTER = {
-  lat: 17.45585,
-  lng: 78.66667,
-};
-
-export default function MapplsMap({
-  scenario,
-  crowdSimulation,
-}: MapplsMapProps) {
+export default function MapplsMap({ twinState }: MapplsMapProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
   const layersRef = useRef<any[]>([]);
@@ -58,8 +49,7 @@ export default function MapplsMap({
       const result = addAllMapplsLayers({
         map: mapRef.current,
         mapplsObject,
-        scenario,
-        crowdSimulation,
+        twinState,
       });
 
       layersRef.current = Object.values(result)
@@ -81,8 +71,8 @@ export default function MapplsMap({
             id: mapContainerRef.current.id,
             properties: {
               center: [
-                SNIST_CENTER.lat,
-                SNIST_CENTER.lng,
+                CAMPUS_MAP_CENTER.lat,
+                CAMPUS_MAP_CENTER.lng,
               ],
               zoom: 17,
               zoomControl: true,
@@ -132,7 +122,7 @@ export default function MapplsMap({
 
       mapRef.current = null;
     };
-  }, [scenario, crowdSimulation]);
+  }, [twinState]);
 
   return (
     <div

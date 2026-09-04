@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { mappls, mappls_plugin } from 'mappls-web-maps';
 
 import { CAMPUS_MAP_CENTER } from '../data/digitalTwinModel';
@@ -16,11 +16,6 @@ interface DigitalTwin3DProps {
   twinState?: DigitalTwinState;
 }
 
-type Coordinate = {
-  lat: number;
-  lng: number;
-};
-
 export default function DigitalTwin3D({
   scenario,
   crowdSimulation,
@@ -30,15 +25,29 @@ export default function DigitalTwin3D({
   const mapRef = useRef<any>(null);
   const mapplsRef = useRef<any>(null);
   const directionRef = useRef<any>(null);
+  const [routeInfo, setRouteInfo] = useState({
+    fastest: 'Calculating...',
+    alternate: 'Calculating...',
+    fastestEta: '--',
+    alternateEta: '--',
+  });
   const overlaysRef = useRef<any[]>([]);
 
   const [error, setError] = useState('');
   const [loaded, setLoaded] = useState(false);
   const [is3D, setIs3D] = useState(true);
 
-  const [selectedLocation, setSelectedLocation] =
-    useState<Coordinate | null>(null);
+  const [selectedLocation, setSelectedLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
 
+  /*
+   * IMPORTANT:
+   * Dashboard may provide the complete DigitalTwinState.
+   * If it doesn't, construct the same state locally from
+   * the current disaster + crowd information.
+   */
   const resolvedTwinState = useMemo<DigitalTwinState | undefined>(() => {
     if (twinState) {
       return twinState;
@@ -51,10 +60,11 @@ export default function DigitalTwin3D({
       crowdSimulation ??
       createCrowdSimulation(activeScenario);
 
-    const risk = calculateRiskAssessment(
-      activeScenario,
-      activeCrowd
-    );
+    const risk =
+      calculateRiskAssessment(
+        activeScenario,
+        activeCrowd
+      );
 
     return buildDigitalTwinState({
       scenario: activeScenario,
@@ -64,119 +74,99 @@ export default function DigitalTwin3D({
   }, [twinState, scenario, crowdSimulation]);
 
   /*
-   * Remove the currently rendered Mappls Directions route.
-   */
-  const clearDirections = () => {
-    const map = mapRef.current;
-    const direction = directionRef.current;
+   * Draw all ResQTwin operational information over
+   * the genuine Mappls geographic map.
+   */const drawRealMapplsRoute = () => {
+  const map = mapRef.current;
+  const plugin = (mapplsRef.current as any)?.__directionPlugin;
 
-    try {
-      direction?.remove?.();
-    } catch {
-      // Ignore.
+  if (!map || !plugin) {
+    console.warn('RESQTWIN: Directions plugin not ready');
+    return;
+  }
+
+  try {
+    if (directionRef.current?.remove) {
+      directionRef.current.remove();
     }
+  } catch {}
 
-    try {
-      if (mapplsRef.current && map && direction) {
-        mapplsRef.current.removeLayer?.({
-          map,
-          layer: direction,
+  const start = `${CAMPUS_MAP_CENTER.lat},${CAMPUS_MAP_CENTER.lng}`;
+  const end = selectedLocation
+    ? `${selectedLocation.lat},${selectedLocation.lng}`
+    : '17.45635,78.66735';
+
+  try {
+    directionRef.current = plugin.direction(
+      {
+        Resource: 'route_eta',
+        annotations: 'nodes,congestion',
+        map,
+        start,
+        end,
+        profile: 'driving',
+        alternatives: 1,
+        steps: false,
+        fitbounds: false,
+        routeColor: ['#22d3ee'],
+        strokeWidth: [7],
+        borderColor: ['#083344'],
+        activeColor: '#22d3ee',
+        activeStrokeWidth: 7,
+        iconPopup: false,
+      },
+      (result: any) => {
+        console.log('RESQTWIN: Mappls route callback', result);
+
+        const routes =
+          result?.routes ??
+          result?.data?.routes ??
+          result?.results ??
+          [];
+
+        if (!Array.isArray(routes) || !routes.length) return;
+
+        const distance = (r: any) =>
+          r?.distance ??
+          r?.summary?.distance ??
+          r?.legs?.[0]?.distance;
+
+        const duration = (r: any) =>
+          r?.duration ??
+          r?.summary?.duration ??
+          r?.legs?.[0]?.duration;
+
+        const fmtDistance = (v: any) => {
+          if (typeof v !== 'number') return 'Available';
+          return v >= 1000
+            ? `${(v / 1000).toFixed(2)} km`
+            : `${v.toFixed(1)} m`;
+        };
+
+        const fmtTime = (v: any) => {
+          if (typeof v !== 'number') return '--';
+          const sec = v > 10000 ? v / 1000 : v;
+          return `${Math.max(1, Math.round(sec / 60))} min`;
+        };
+
+        setRouteInfo({
+          fastest: fmtDistance(distance(routes[0])),
+          alternate: routes[1]
+            ? fmtDistance(distance(routes[1]))
+            : 'No alternate',
+          fastestEta: fmtTime(duration(routes[0])),
+          alternateEta: routes[1]
+            ? fmtTime(duration(routes[1]))
+            : '--',
         });
       }
-    } catch {
-      // Ignore.
-    }
+    );
+  } catch (e) {
+    console.error('RESQTWIN: Directions failed', e);
+  }
+};
 
-    directionRef.current = null;
-  };
 
-  /*
-   * Render one genuine Mappls route.
-   *
-   * IMPORTANT:
-   * These are real geographic WGS84 coordinates.
-   * They are NOT generated from the old simulated x/y campus model.
-   *
-   * The starting point is the verified SNIST campus geographic
-   * anchor used by the current Mappls view.
-   *
-   * The destination is a real geographic point on the
-   * campus/road area used only to validate the Directions
-   * integration. We do not label it as a ResQTwin exit yet.
-   */
-  const drawRealMapplsRoute = () => {
-    const map = mapRef.current;
-    const mapplsPluginObject = (mapplsRef.current as any)?.__directionPlugin;
-
-    if (!map || !mapplsPluginObject) {
-      console.warn(
-        'RESQTWIN: Directions plugin is not ready'
-      );
-      return;
-    }
-
-    clearDirections();
-
-    const start = `${CAMPUS_MAP_CENTER.lat},${CAMPUS_MAP_CENTER.lng}`;
-
-    const destination: Coordinate = selectedLocation ?? {
-      lat: 17.45635,
-      lng: 78.66735,
-    };
-
-    const end = `${destination.lat},${destination.lng}`;
-
-    try {
-      console.log(
-        'RESQTWIN: requesting genuine Mappls route',
-        { start, end }
-      );
-
-      directionRef.current =
-        mapplsPluginObject.direction(
-          {
-            Resource: 'route_eta',
-            annotations: 'nodes,congestion',
-            map,
-            start,
-            end,
-            profile: 'driving',
-            alternatives: 1,
-            steps: false,
-            fitbounds: false,
-            routeColor: ['#22d3ee'],
-            strokeWidth: [7],
-            borderColor: ['#083344'],
-            activeColor: '#22d3ee',
-            activeStrokeWidth: 7,
-            iconPopup: false,
-          },
-          (result: any) => {
-            console.log(
-              'RESQTWIN: Mappls route callback',
-              result
-            );
-          }
-        );
-
-      console.log(
-        'RESQTWIN: genuine Mappls route created',
-        directionRef.current
-      );
-    } catch (routeError) {
-      console.error(
-        'RESQTWIN: Mappls Directions failed',
-        routeError
-      );
-    }
-  };
-
-  /*
-   * Draw ResQTwin operational overlays.
-   *
-   * mapplsLayers handles verified markers.
-   * Directions handles the genuine route.
-   */
   const drawLayers = (state?: DigitalTwinState) => {
     const map = mapRef.current;
     const mapplsObject = mapplsRef.current;
@@ -194,9 +184,12 @@ export default function DigitalTwin3D({
     }
 
     console.log(
-      'RESQTWIN: drawing operational overlays'
+      'RESQTWIN: drawing overlays now'
     );
 
+    /*
+     * Remove previous ResQTwin overlay.
+     */
     overlaysRef.current.forEach((overlay) => {
       try {
         overlay?.remove?.();
@@ -208,6 +201,16 @@ export default function DigitalTwin3D({
     overlaysRef.current = [];
 
     try {
+      /*
+       * IMPORTANT:
+       * mapplsLayers expects:
+       *
+       *   mapplsObject
+       *   map
+       *   twinState
+       *
+       * as separate arguments.
+       */
       const result = addAllMapplsLayers(
         mapplsObject,
         map,
@@ -219,7 +222,7 @@ export default function DigitalTwin3D({
       }
 
       console.log(
-        'RESQTWIN: operational overlays created',
+        'RESQTWIN: overlays created',
         result
       );
     } catch (layerError) {
@@ -228,20 +231,16 @@ export default function DigitalTwin3D({
         layerError
       );
     }
-
-    /*
-     * Real Mappls route.
-     *
-     * This is intentionally independent of the fake campus
-     * x/y -> latitude/longitude conversion.
-     */
-    drawRealMapplsRoute();
   };
 
   /*
    * Create Mappls map.
    *
-   * Existing 3D camera/model configuration is preserved.
+   * We deliberately DO NOT call setPitch/setBearing here.
+   * Your Mappls SDK was throwing getBearing/getZoom errors
+   * from those camera-control calls.
+   *
+   * Mappls itself remains responsible for the genuine 3D view.
    */
   useEffect(() => {
     const key = import.meta.env.VITE_MAPPLS_KEY;
@@ -260,20 +259,11 @@ export default function DigitalTwin3D({
     const mapplsObject = new mappls();
     mapplsRef.current = mapplsObject;
 
-    /*
-     * Instantiate the official Directions plugin.
-     */
-    const directionPlugin = new mappls_plugin();
-
-    /*
-     * Keep it attached to the Mappls instance so that
-     * route drawing can access it after initialization.
-     */
-    (mapplsObject as any).__directionPlugin =
-      directionPlugin;
+  const directionPlugin = new mappls_plugin();
+  (mapplsObject as any).__directionPlugin = directionPlugin;
 
     console.log(
-      'RESQTWIN: initializing Mappls + Directions plugin'
+      'RESQTWIN: initializing Mappls'
     );
 
     mapplsObject.initialize(
@@ -281,7 +271,6 @@ export default function DigitalTwin3D({
       {
         map: true,
         version: '3.0',
-        plugins: ['direction'],
       },
       () => {
         if (
@@ -300,8 +289,8 @@ export default function DigitalTwin3D({
                 CAMPUS_MAP_CENTER.lng,
               ],
               zoom: 17,
-              tilt: 55,
-              heading: 345,
+                tilt: 55,
+                heading: 345,
               zoomControl: true,
               location: true,
               fullscreenControl: true,
@@ -312,20 +301,11 @@ export default function DigitalTwin3D({
 
           mapRef.current = map;
 
-          /*
-           * Preserve the genuine Mappls 3D landmarks.
-           */
           try {
             mapplsObject.add3DModel?.({ map });
-
-            console.log(
-              'RESQTWIN: Mappls 3D landmarks restored'
-            );
+            console.log("RESQTWIN: Mappls 3D landmarks restored");
           } catch (e) {
-            console.warn(
-              'RESQTWIN: 3D landmarks unavailable',
-              e
-            );
+            console.warn("RESQTWIN: 3D landmarks unavailable", e);
           }
 
           console.log(
@@ -334,7 +314,8 @@ export default function DigitalTwin3D({
           );
 
           /*
-           * Capture a real geographic Mappls click.
+           * Select a real geographic location by clicking
+           * on the Mappls map.
            */
           map.addListener?.(
             'click',
@@ -363,17 +344,10 @@ export default function DigitalTwin3D({
                   typeof lat === 'number' &&
                   typeof lng === 'number'
                 ) {
-                  const location = {
+                  setSelectedLocation({
                     lat,
                     lng,
-                  };
-
-                  console.log(
-                    'RESQTWIN: real Mappls location selected',
-                    location
-                  );
-
-                  setSelectedLocation(location);
+                  });
                 }
               } catch {
                 // Ignore malformed click events.
@@ -382,7 +356,7 @@ export default function DigitalTwin3D({
           );
 
           /*
-           * Map load.
+           * Mappls load event.
            */
           map.addListener?.(
             'load',
@@ -403,13 +377,13 @@ export default function DigitalTwin3D({
                     resolvedTwinState
                   );
                 }
-              }, 800);
+              }, 300);
             }
           );
 
           /*
-           * Fallback for Mappls versions where the load event
-           * behaves differently.
+           * Fallback for Mappls versions where the load
+           * event fires differently.
            */
           setTimeout(() => {
             if (cancelled) {
@@ -425,7 +399,7 @@ export default function DigitalTwin3D({
             drawLayers(
               resolvedTwinState
             );
-          }, 2000);
+          }, 1500);
         } catch (mapError) {
           console.error(
             'RESQTWIN: Mappls map creation failed',
@@ -441,8 +415,6 @@ export default function DigitalTwin3D({
 
     return () => {
       cancelled = true;
-
-      clearDirections();
 
       overlaysRef.current.forEach(
         (overlay) => {
@@ -464,14 +436,16 @@ export default function DigitalTwin3D({
 
       mapRef.current = null;
       mapplsRef.current = null;
-
       setLoaded(false);
     };
   }, []);
 
   /*
-   * Synchronize route + operational overlays whenever
-   * ResQTwin state changes.
+   * THE IMPORTANT SYNCHRONIZATION EFFECT.
+   *
+   * Whenever the disaster scenario, crowd, route,
+   * blocked road, blocked exit, risk or population changes,
+   * redraw the ResQTwin layers on the same Mappls map.
    */
   useEffect(() => {
     if (!loaded) {
@@ -479,23 +453,29 @@ export default function DigitalTwin3D({
     }
 
     if (!resolvedTwinState) {
+      console.log(
+        'RESQTWIN: no DigitalTwinState available'
+      );
       return;
     }
 
     console.log(
-      'RESQTWIN: DigitalTwinState changed -> redraw'
+      'RESQTWIN: state changed -> redraw overlays'
     );
 
     drawLayers(resolvedTwinState);
   }, [
     loaded,
     resolvedTwinState,
-    selectedLocation,
   ]);
 
   /*
-   * Keep the 2D / 3D selector without touching
-   * the working Mappls camera controls.
+   * 2D / 3D selector.
+   *
+   * We keep the selector without calling the broken
+   * Mappls camera-control methods.
+   *
+   * The Mappls geographic view itself remains intact.
    */
   useEffect(() => {
     if (!loaded) {
@@ -505,7 +485,7 @@ export default function DigitalTwin3D({
     if (resolvedTwinState) {
       setTimeout(() => {
         drawLayers(resolvedTwinState);
-      }, 250);
+      }, 200);
     }
   }, [
     is3D,
@@ -515,6 +495,7 @@ export default function DigitalTwin3D({
 
   return (
     <div className="relative h-full w-full overflow-hidden rounded-xl bg-slate-950">
+
       <div
         id="resqtwin-map"
         ref={mapContainerRef}
@@ -537,6 +518,7 @@ export default function DigitalTwin3D({
 
       {!error && (
         <>
+          {/* 2D / 3D selector */}
           <div className="absolute right-4 top-4 z-40 flex overflow-hidden rounded-xl border border-slate-500/40 bg-slate-900/90 shadow-xl backdrop-blur">
             <button
               onClick={() => setIs3D(false)}
@@ -561,9 +543,10 @@ export default function DigitalTwin3D({
             </button>
           </div>
 
+          {/* Header */}
           <div className="absolute left-4 top-4 z-40 rounded-xl border border-cyan-400/30 bg-slate-950/85 px-4 py-3 shadow-xl backdrop-blur">
             <div className="text-sm font-black tracking-wide text-cyan-300">
-              RESQTWIN • MAPPLS DIGITAL TWIN
+              RESQTWIN â€¢ MAPPLS DIGITAL TWIN
             </div>
 
             <div className="mt-1 text-xs text-slate-300">
@@ -577,17 +560,54 @@ export default function DigitalTwin3D({
                 {String(
                   scenario.type
                 ).toUpperCase()}{' '}
-                • Severity{' '}
+                â€¢ Severity{' '}
                 {scenario.severity}/5
               </div>
             )}
-
-            <div className="mt-2 text-[10px] font-bold text-cyan-200">
-              MAPPLS DIRECTIONS ENABLED
-            </div>
           </div>
 
-          {selectedLocation && (
+          {/* Selected location */}
+          {loaded && (
+  <div className="absolute left-4 top-20 z-[60] w-[300px] overflow-hidden rounded-xl border border-cyan-400/40 bg-slate-950/95 shadow-2xl">
+    <div className="border-b border-slate-700 px-4 py-3">
+      <div className="text-sm font-black text-white">2 Available Routes</div>
+      <div className="mt-1 text-[10px] font-bold uppercase tracking-wider text-cyan-300">
+        Mappls Directions
+      </div>
+    </div>
+
+    <div className="border-b border-slate-800 px-4 py-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs font-bold text-cyan-300">Fastest Route</div>
+          <div className="mt-1 text-sm font-bold text-white">
+            {routeInfo.fastest}
+          </div>
+        </div>
+        <div className="text-xs text-slate-400">
+          {routeInfo.fastestEta}
+        </div>
+      </div>
+    </div>
+
+    <div className="px-4 py-3">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-xs font-bold text-slate-300">
+            Alternate Route 1
+          </div>
+          <div className="mt-1 text-sm font-bold text-white">
+            {routeInfo.alternate}
+          </div>
+        </div>
+        <div className="text-xs text-slate-400">
+          {routeInfo.alternateEta}
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+{selectedLocation && (
             <div className="absolute bottom-4 right-4 z-40 rounded-lg border border-cyan-400/30 bg-slate-950/90 px-4 py-3 text-xs text-slate-200 shadow-xl backdrop-blur">
               <div className="font-bold text-cyan-300">
                 SELECTED MAPPLS LOCATION
@@ -606,13 +626,10 @@ export default function DigitalTwin3D({
                   6
                 )}
               </div>
-
-              <div className="mt-2 font-bold text-cyan-200">
-                ROUTE UPDATED
-              </div>
             </div>
           )}
 
+          {/* ResQTwin operational information */}
           {resolvedTwinState && (
             <DigitalTwinOverlay
               twinState={resolvedTwinState}
@@ -620,13 +637,14 @@ export default function DigitalTwin3D({
             />
           )}
 
+          {/* Status */}
           <div className="absolute bottom-4 left-4 z-40 rounded-lg border border-slate-500/30 bg-slate-950/85 px-3 py-2 text-xs text-slate-300 backdrop-blur">
             <span className="font-bold text-green-400">
-              ● LIVE
+              â— LIVE
             </span>{' '}
             Mappls {is3D ? '3D' : '2D'}
             {resolvedTwinState
-              ? ` • ${resolvedTwinState.totalPopulation ?? 0} people`
+              ? ` â€¢ ${resolvedTwinState.totalPopulation ?? 0} people`
               : ''}
           </div>
         </>
@@ -634,3 +652,6 @@ export default function DigitalTwin3D({
     </div>
   );
 }
+
+
+

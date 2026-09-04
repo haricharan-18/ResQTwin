@@ -1,3 +1,10 @@
+import {
+  buildings,
+  roads,
+  exits,
+  assemblyPoints,
+} from "../data/campusData";
+
 import type {
   Building,
   Exit,
@@ -5,10 +12,18 @@ import type {
   AssemblyPoint,
 } from "../data/campusData";
 
-export interface MapplsCoordinate {
+export type MapplsCoordinate = {
   lat: number;
   lng: number;
-}
+};
+
+export type CampusCoordinateConfig = {
+  buildings: Record<string, MapplsCoordinate | null>;
+  roads: Record<string, MapplsCoordinate[] | null>;
+  exits: Record<string, MapplsCoordinate | null>;
+  assemblyPoints: Record<string, MapplsCoordinate | null>;
+  hospitals: Record<string, MapplsCoordinate | null>;
+};
 
 /*
  * REAL SNIST CAMPUS ANCHOR
@@ -32,44 +47,39 @@ export const SNIST_MAP_CENTER: MapplsCoordinate = {
 /*
  * Real-campus semantic anchors.
  *
- * We deliberately keep these separate from campusData.ts
- * so the disaster/routing engine remains unchanged.
+ * Kept separate from campusData.ts so the
+ * disaster/routing engine remains unchanged.
  */
+
 export const SNIST_BUILDING_COORDINATES: Record<
   string,
   MapplsCoordinate
 > = {
-  /* Engineering Block */
   b1: {
     lat: 17.45495,
     lng: 78.66755,
   },
 
-  /* Science Block */
   b2: {
     lat: 17.45555,
     lng: 78.66735,
   },
 
-  /* Central Library */
   b3: {
     lat: 17.45695,
     lng: 78.66710,
   },
 
-  /* Admin Block */
   b4: {
     lat: 17.45555,
     lng: 78.66625,
   },
 
-  /* Student Hostel */
   b5: {
     lat: 17.45420,
     lng: 78.66545,
   },
 
-  /* Sports Complex */
   b6: {
     lat: 17.45415,
     lng: 78.66905,
@@ -79,29 +89,26 @@ export const SNIST_BUILDING_COORDINATES: Record<
 /*
  * Emergency exits around the campus perimeter.
  */
+
 export const SNIST_EXIT_COORDINATES: Record<
   string,
   MapplsCoordinate
 > = {
-  /* North Gate */
   e1: {
     lat: 17.45755,
     lng: 78.66695,
   },
 
-  /* Main Gate */
   e2: {
     lat: 17.45355,
     lng: 78.66405,
   },
 
-  /* East Gate */
   e3: {
     lat: 17.45520,
     lng: 78.67005,
   },
 
-  /* South Gate */
   e4: {
     lat: 17.45295,
     lng: 78.66730,
@@ -111,6 +118,7 @@ export const SNIST_EXIT_COORDINATES: Record<
 /*
  * Assembly areas.
  */
+
 export const SNIST_ASSEMBLY_COORDINATES: Record<
   string,
   MapplsCoordinate
@@ -128,11 +136,8 @@ export const SNIST_ASSEMBLY_COORDINATES: Record<
 
 /*
  * Semantic road/junction anchors.
- *
- * These are no longer used to recreate the old 2D road
- * network visually. They are retained so existing code
- * can continue resolving Road -> Mappls coordinates.
  */
+
 export const campusJunctions: Record<
   string,
   MapplsCoordinate
@@ -168,6 +173,116 @@ export const campusJunctions: Record<
   },
 };
 
+/*
+ * Generic coordinate configuration.
+ *
+ * This allows coordinates to remain null when
+ * verified coordinates are unavailable.
+ */
+
+export const SNIST_COORDINATES: CampusCoordinateConfig = {
+  buildings: {
+    b1: null,
+    b2: null,
+    b3: null,
+    b4: null,
+    b5: null,
+    b6: null,
+  },
+
+  roads: {
+    r1: null,
+    r2: null,
+    r3: null,
+    r4: null,
+    r5: null,
+    r6: null,
+    r7: null,
+  },
+
+  exits: {
+    e1: null,
+    e2: null,
+    e3: null,
+    e4: null,
+  },
+
+  assemblyPoints: {
+    a1: null,
+    a2: null,
+  },
+
+  hospitals: {
+    campusMedicalCenter: null,
+    emergencyFieldHospital: null,
+  },
+};
+
+/**
+ * Converts ResQTwin campus IDs into Mappls coordinates.
+ */
+
+export function createCoordinateAdapter(
+  config: CampusCoordinateConfig = SNIST_COORDINATES
+) {
+  return {
+    building(id: string): MapplsCoordinate | null {
+      return config.buildings[id] ?? null;
+    },
+
+    road(id: string): MapplsCoordinate[] | null {
+      return config.roads[id] ?? null;
+    },
+
+    exit(id: string): MapplsCoordinate | null {
+      return config.exits[id] ?? null;
+    },
+
+    assemblyPoint(id: string): MapplsCoordinate | null {
+      return config.assemblyPoints[id] ?? null;
+    },
+
+    hospital(id: string): MapplsCoordinate | null {
+      return config.hospitals[id] ?? null;
+    },
+  };
+}
+
+export const mapplsCoordinateAdapter =
+  createCoordinateAdapter();
+
+/**
+ * Existing ResQTwin campus entities.
+ *
+ * These remain the source of truth.
+ * We are NOT modifying campusData.ts.
+ */
+
+export const mapplsCampusEntities = {
+  buildings,
+  roads,
+  exits,
+  assemblyPoints,
+};
+
+/**
+ * Checks whether a coordinate has been configured.
+ */
+
+export function hasCoordinate(
+  coordinate: MapplsCoordinate | null
+): coordinate is MapplsCoordinate {
+  return (
+    coordinate !== null &&
+    Number.isFinite(coordinate.lat) &&
+    Number.isFinite(coordinate.lng)
+  );
+}
+
+/*
+ * Mappls-enriched campus entities.
+ */
+
 export interface MapplsBuilding extends Building {
   mappls: MapplsCoordinate;
 }
@@ -187,9 +302,7 @@ export function buildingToMappls(
   return {
     ...building,
     mappls:
-      SNIST_BUILDING_COORDINATES[
-        building.id
-      ] ??
+      SNIST_BUILDING_COORDINATES[building.id] ??
       SNIST_MAP_CENTER,
   };
 }
@@ -200,9 +313,7 @@ export function exitToMappls(
   return {
     ...exit,
     mappls:
-      SNIST_EXIT_COORDINATES[
-        exit.id
-      ] ??
+      SNIST_EXIT_COORDINATES[exit.id] ??
       SNIST_MAP_CENTER,
   };
 }
@@ -213,9 +324,7 @@ export function assemblyPointToMappls(
   return {
     ...point,
     mappls:
-      SNIST_ASSEMBLY_COORDINATES[
-        point.id
-      ] ??
+      SNIST_ASSEMBLY_COORDINATES[point.id] ??
       SNIST_MAP_CENTER,
   };
 }

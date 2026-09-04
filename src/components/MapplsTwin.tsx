@@ -10,6 +10,7 @@ import {
 
 import {
   SNIST_MAP_CENTER,
+  RESQTWIN_MAP_BOUNDS,
   buildingToMappls,
   exitToMappls,
   assemblyPointToMappls,
@@ -39,10 +40,15 @@ interface MapplsTwinProps {
   };
 }
 
+type LatLng = {
+  lat: number;
+  lng: number;
+};
+
 function addMarker(
   mapplsObject: any,
   map: any,
-  position: { lat: number; lng: number },
+  position: LatLng,
   html: string,
   popupHtml?: string
 ) {
@@ -68,7 +74,7 @@ function addMarker(
 function addPolyline(
   mapplsObject: any,
   map: any,
-  path: Array<{ lat: number; lng: number }>,
+  path: LatLng[],
   blocked: boolean,
   popupHtml: string
 ) {
@@ -90,6 +96,58 @@ function addPolyline(
   }
 }
 
+function addBuildingPolygon(
+  mapplsObject: any,
+  map: any,
+  building: (typeof buildings)[number],
+  affected: boolean
+) {
+  if (!mapplsObject?.Polygon) return null;
+
+  const paths = [
+    resqtwinToMappls(building.x, building.y),
+    resqtwinToMappls(
+      building.x + building.width,
+      building.y
+    ),
+    resqtwinToMappls(
+      building.x + building.width,
+      building.y + building.height
+    ),
+    resqtwinToMappls(
+      building.x,
+      building.y + building.height
+    ),
+  ];
+
+  try {
+    return new mapplsObject.Polygon({
+      map,
+      paths,
+      fillcolor: affected ? "#ef4444" : "#2563eb",
+      fillOpacity: affected ? 0.38 : 0.20,
+      strokeColor: affected ? "#dc2626" : "#22d3ee",
+      strokeOpacity: 0.95,
+      strokeWeight: 2,
+      zIndex: affected ? 20 : 5,
+      popupHtml: `
+        <div style="padding:12px;min-width:220px;font-family:Arial,sans-serif">
+          <strong>${building.name}</strong><br/><br/>
+          Occupants: <b>${building.occupants}</b><br/>
+          Capacity: <b>${building.capacity}</b><br/>
+          Base Risk: <b>${building.risk}/100</b><br/><br/>
+          <b style="color:${affected ? "#dc2626" : "#059669"}">
+            ${affected ? "AFFECTED BUILDING" : "BUILDING SAFE"}
+          </b>
+        </div>
+      `,
+    });
+  } catch (error) {
+    console.warn("Mappls polygon failed:", error);
+    return null;
+  }
+}
+
 export default function MapplsTwin({
   scenario,
   crowdSimulation,
@@ -99,18 +157,6 @@ export default function MapplsTwin({
   const overlaysRef = useRef<any[]>([]);
   const [error, setError] = useState("");
 
-  const clearOverlays = () => {
-    overlaysRef.current.forEach((overlay) => {
-      try {
-        overlay?.remove?.();
-      } catch {
-        // Ignore SDK cleanup errors.
-      }
-    });
-
-    overlaysRef.current = [];
-  };
-
   useEffect(() => {
     const key = import.meta.env.VITE_MAPPLS_KEY;
 
@@ -119,16 +165,23 @@ export default function MapplsTwin({
       return;
     }
 
-    if (!mapContainerRef.current) {
-      return;
-    }
+    if (!mapContainerRef.current) return;
 
     let cancelled = false;
     const mapplsObject = new mappls();
 
-    const drawLayers = () => {
-      if (cancelled || !mapRef.current) return;
+    const clearOverlays = () => {
+      overlaysRef.current.forEach((overlay) => {
+        try {
+          overlay?.remove?.();
+        } catch {
+          // Ignore SDK cleanup errors.
+        }
+      });
+      overlaysRef.current = [];
+    };
 
+    const drawLayers = (map: any) => {
       clearOverlays();
 
       const affectedBuildings = new Set(
@@ -141,55 +194,44 @@ export default function MapplsTwin({
         scenario?.blockedExits ?? []
       );
 
-      /* BUILDINGS — same positions as 2D Digital Twin. */
       buildings.forEach((building) => {
-        const mapped = buildingToMappls(building);
         const affected = affectedBuildings.has(building.id);
 
-        const marker = addMarker(
+        const polygon = addBuildingPolygon(
           mapplsObject,
-          mapRef.current,
+          map,
+          building,
+          affected
+        );
+
+        if (polygon) overlaysRef.current.push(polygon);
+
+        const mapped = buildingToMappls(building);
+
+        const label = addMarker(
+          mapplsObject,
+          map,
           mapped.mappls,
           `
             <div style="
               transform:translate(-50%,-100%);
-              padding:6px 10px;
-              border-radius:9px;
-              background:${
-                affected
-                  ? "rgba(127,29,29,.97)"
-                  : "rgba(15,23,42,.97)"
-              };
-              border:2px solid ${
-                affected ? "#ef4444" : "#22d3ee"
-              };
-              color:white;
-              font:800 11px Arial,sans-serif;
+              padding:5px 9px;
+              border-radius:8px;
+              background:${affected ? "rgba(127,29,29,.97)" : "rgba(15,23,42,.96)"};
+              border:2px solid ${affected ? "#ef4444" : "#22d3ee"};
+              color:#fff;
+              font:800 10px Arial,sans-serif;
               white-space:nowrap;
               box-shadow:0 4px 14px rgba(0,0,0,.45);
             ">
               ${affected ? "AFFECTED" : "BUILDING"} ${building.name}
             </div>
-          `,
-          `
-            <div style="padding:12px;min-width:220px;font-family:Arial,sans-serif">
-              <strong>${building.name}</strong>
-              <br/><br/>
-              Occupants: <b>${building.occupants}</b><br/>
-              Capacity: <b>${building.capacity}</b><br/>
-              Base Risk: <b>${building.risk}/100</b>
-              <br/><br/>
-              <b style="color:${affected ? "#dc2626" : "#059669"}">
-                ${affected ? "AFFECTED BUILDING" : "BUILDING SAFE"}
-              </b>
-            </div>
           `
         );
 
-        if (marker) overlaysRef.current.push(marker);
+        if (label) overlaysRef.current.push(label);
       });
 
-      /* ROADS — exact same geometry as 2D Digital Twin. */
       roads.forEach((road) => {
         const path = roadPositionToMappls(road.id);
         if (!path) return;
@@ -200,16 +242,14 @@ export default function MapplsTwin({
 
         const line = addPolyline(
           mapplsObject,
-          mapRef.current,
+          map,
           path,
           blocked,
           `
             <div style="padding:12px;min-width:220px;font-family:Arial,sans-serif">
-              <strong>${road.name}</strong>
-              <br/><br/>
+              <strong>${road.name}</strong><br/><br/>
               Distance: <b>${road.distance}m</b><br/>
-              Capacity: <b>${road.capacity}</b>
-              <br/><br/>
+              Capacity: <b>${road.capacity}</b><br/><br/>
               <b style="color:${blocked ? "#dc2626" : "#059669"}">
                 ${blocked ? "ROAD BLOCKED" : "EVACUATION ROUTE OPEN"}
               </b>
@@ -220,7 +260,6 @@ export default function MapplsTwin({
         if (line) overlaysRef.current.push(line);
       });
 
-      /* EXITS — same positions as 2D Digital Twin. */
       exits.forEach((exit) => {
         const mapped = exitToMappls(exit);
         const blocked =
@@ -229,113 +268,78 @@ export default function MapplsTwin({
 
         const marker = addMarker(
           mapplsObject,
-          mapRef.current,
+          map,
           mapped.mappls,
           `
             <div style="
               transform:translate(-50%,-100%);
-              padding:5px 9px;
+              padding:5px 8px;
               border-radius:8px;
-              background:${
-                blocked
-                  ? "rgba(127,29,29,.98)"
-                  : "rgba(6,78,59,.98)"
-              };
-              border:2px solid ${
-                blocked ? "#ef4444" : "#34d399"
-              };
-              color:white;
+              background:${blocked ? "rgba(127,29,29,.98)" : "rgba(6,78,59,.98)"};
+              border:2px solid ${blocked ? "#ef4444" : "#34d399"};
+              color:#fff;
               font:800 10px Arial,sans-serif;
               white-space:nowrap;
               box-shadow:0 4px 12px rgba(0,0,0,.4);
             ">
               ${blocked ? "BLOCKED" : "EXIT"} ${exit.name}
             </div>
-          `,
-          `
-            <div style="padding:12px;font-family:Arial,sans-serif">
-              <strong>${exit.name}</strong><br/><br/>
-              Capacity: <b>${exit.capacity}</b><br/><br/>
-              <b style="color:${blocked ? "#dc2626" : "#059669"}">
-                ${blocked ? "EXIT BLOCKED" : "EXIT AVAILABLE"}
-              </b>
-            </div>
           `
         );
 
         if (marker) overlaysRef.current.push(marker);
       });
 
-      /* ASSEMBLY POINTS — same positions as 2D Digital Twin. */
       assemblyPoints.forEach((point) => {
         const mapped = assemblyPointToMappls(point);
 
         const marker = addMarker(
           mapplsObject,
-          mapRef.current,
+          map,
           mapped.mappls,
           `
             <div style="
               transform:translate(-50%,-100%);
-              padding:5px 9px;
+              padding:5px 8px;
               border-radius:8px;
               background:rgba(6,78,59,.98);
               border:2px solid #34d399;
-              color:white;
+              color:#fff;
               font:800 10px Arial,sans-serif;
               white-space:nowrap;
               box-shadow:0 4px 12px rgba(0,0,0,.4);
             ">
               SAFE ${point.name}
             </div>
-          `,
-          `
-            <div style="padding:12px;font-family:Arial,sans-serif">
-              <strong>${point.name}</strong><br/><br/>
-              Capacity: <b>${point.capacity}</b><br/><br/>
-              <b style="color:#059669">SAFE ASSEMBLY AREA</b>
-            </div>
           `
         );
 
         if (marker) overlaysRef.current.push(marker);
       });
 
-      /* CROWD — same 2D coordinate projection. */
       const agents = crowdSimulation?.agents ?? [];
 
-      if (mapplsObject.Marker && agents.length > 0) {
+      if (agents.length > 0 && mapplsObject.Marker) {
         const sample =
           agents.length > 250
             ? agents.filter(
                 (_agent, index) =>
-                  index %
-                    Math.ceil(agents.length / 250) ===
-                  0
+                  index % Math.ceil(agents.length / 250) === 0
               )
             : agents;
 
         sample.forEach((agent) => {
           const marker = addMarker(
             mapplsObject,
-            mapRef.current,
+            map,
             resqtwinToMappls(agent.x, agent.y),
-            `
-              <div style="
-                width:8px;
-                height:8px;
-                border-radius:50%;
-                background:${
-                  agent.status === "trapped"
-                    ? "#ef4444"
-                    : agent.status === "safe"
-                      ? "#34d399"
-                      : "#38bdf8"
-                };
-                border:1px solid white;
-                box-shadow:0 0 7px currentColor;
-              "></div>
-            `
+            `<div style="width:8px;height:8px;border-radius:50%;background:${
+              agent.status === "trapped"
+                ? "#ef4444"
+                : agent.status === "safe"
+                  ? "#34d399"
+                  : "#38bdf8"
+            };border:1px solid white;"></div>`
           );
 
           if (marker) overlaysRef.current.push(marker);
@@ -382,7 +386,7 @@ export default function MapplsTwin({
               // Optional Mappls 3D landmarks.
             }
 
-            drawLayers();
+            drawLayers(map);
           }, 1000);
         } catch (mapError) {
           console.error("Mappls map creation failed:", mapError);
@@ -491,13 +495,7 @@ export default function MapplsTwin({
             minWidth: 130,
           }}
         >
-          <div
-            style={{
-              fontSize: 10,
-              color: "#94a3b8",
-              letterSpacing: 1,
-            }}
-          >
+          <div style={{ fontSize: 10, color: "#94a3b8", letterSpacing: 1 }}>
             ACTIVE DISASTER
           </div>
           <div
@@ -510,13 +508,7 @@ export default function MapplsTwin({
           >
             {scenario.type}
           </div>
-          <div
-            style={{
-              marginTop: 3,
-              fontSize: 11,
-              color: "#cbd5e1",
-            }}
-          >
+          <div style={{ marginTop: 3, fontSize: 11, color: "#cbd5e1" }}>
             Severity {scenario.severity ?? "-"}/5
           </div>
         </div>
@@ -537,33 +529,13 @@ export default function MapplsTwin({
           fontSize: 11,
         }}
       >
-        <b>2630</b> people | Roads <b>{roads.length}</b> | Buildings <b>{buildings.length}</b>
-      </div>
-
-      <div
-        style={{
-          position: "absolute",
-          right: 16,
-          bottom: 16,
-          zIndex: 20,
-          padding: "10px 12px",
-          borderRadius: 12,
-          background: "rgba(2,6,23,.94)",
-          border: "1px solid rgba(148,163,184,.2)",
-          color: "#cbd5e1",
-          fontFamily: "Arial,sans-serif",
-          fontSize: 10,
-        }}
-      >
-        <div>
-          <span style={{ color: "#06b6d4" }}>●</span> Open road
-        </div>
-        <div style={{ marginTop: 4 }}>
-          <span style={{ color: "#ef4444" }}>●</span> Blocked road
-        </div>
-        <div style={{ marginTop: 4 }}>
-          <span style={{ color: "#34d399" }}>●</span> Exit / assembly
-        </div>
+        <b>{crowdSimulation?.totalPeople ?? 2630}</b> people
+        <span style={{ color: "#64748b" }}> | </span>
+        <b style={{ color: "#38bdf8" }}>{crowdSimulation?.evacuating ?? 0}</b> evacuating
+        <span style={{ color: "#64748b" }}> | </span>
+        <b style={{ color: "#ef4444" }}>{crowdSimulation?.trapped ?? 0}</b> trapped
+        <span style={{ color: "#64748b" }}> | </span>
+        <b style={{ color: "#34d399" }}>{crowdSimulation?.safe ?? 0}</b> safe
       </div>
     </div>
   );
